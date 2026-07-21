@@ -135,7 +135,41 @@ PS
     fi
     if [ "$n" -gt 0 ]; then
       info "Installed $n font file(s) into Windows (per-user)."
-      warn "WSL: restart Windows Terminal, then set Font face to 'JetBrainsMono Nerd Font' (Settings → your profile → Appearance)."
+      # Auto-select the font in Windows Terminal so it just works. Backs up
+      # settings.json to .nvxbak first; strips // comments; skips on any error.
+      cat > "$tmp/wtfont.ps1" <<'PS'
+$Face = "JetBrainsMono Nerd Font"
+$paths = @(
+  (Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json'),
+  (Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe\LocalState\settings.json'),
+  (Join-Path $env:LOCALAPPDATA 'Microsoft\Windows Terminal\settings.json')
+)
+$done = 0
+foreach ($p in $paths) {
+  if (-not (Test-Path $p)) { continue }
+  try {
+    $raw = Get-Content -Raw -Path $p
+    $clean = (($raw -replace "`r","") -split "`n" | Where-Object { $_ -notmatch '^\s*//' }) -join "`n"
+    $j = $clean | ConvertFrom-Json
+    if (-not $j.profiles) { $j | Add-Member -NotePropertyName profiles -NotePropertyValue ([pscustomobject]@{}) -Force }
+    if (-not $j.profiles.defaults) { $j.profiles | Add-Member -NotePropertyName defaults -NotePropertyValue ([pscustomobject]@{}) -Force }
+    if (-not $j.profiles.defaults.font) { $j.profiles.defaults | Add-Member -NotePropertyName font -NotePropertyValue ([pscustomobject]@{}) -Force }
+    $j.profiles.defaults.font | Add-Member -NotePropertyName face -NotePropertyValue $Face -Force
+    Copy-Item $p "$p.nvxbak" -Force
+    ($j | ConvertTo-Json -Depth 32) | Set-Content -Path $p -Encoding UTF8
+    $done++
+  } catch { }
+}
+Write-Output ("NVXWT=" + $done)
+PS
+      local wt
+      wt="$(powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w "$tmp/wtfont.ps1")" 2>/dev/null | tr -d '\r' | sed -n 's/^NVXWT=//p')"
+      wt="${wt//[^0-9]/}"; [ -n "$wt" ] || wt=0
+      if [ "$wt" -gt 0 ]; then
+        info "Set Windows Terminal font automatically (backup: settings.json.nvxbak). Restart the terminal to apply."
+      else
+        warn "Font installed, but couldn't auto-set the terminal font — set it once: Windows Terminal → Settings → your profile → Appearance → Font face → 'JetBrainsMono Nerd Font'."
+      fi
     else
       # interop unavailable — stage the fonts so the user can install them
       local stage="$NVX_HOME/fonts"; mkdir -p "$stage"
