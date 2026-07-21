@@ -4,6 +4,11 @@
 vim.g.mapleader = " "
 vim.g.maplocalleader = " "
 
+-- Disable netrw at startup (before any directory buffer can load) so nvim-tree
+-- owns directories — otherwise `nvim <dir>` / `nvx .` opens the netrw explorer.
+vim.g.loaded_netrw = 1
+vim.g.loaded_netrwPlugin = 1
+
 require("config.options")
 require("config.keymaps")
 

@@ -6,10 +6,21 @@ return {
   keys = {
     { "<leader>e", "<cmd>NvimTreeToggle<cr>", desc = "Toggle file explorer" },
   },
+  -- Runs at startup even though the plugin is lazy: if nvim opens a directory
+  -- (`nvx .`, `nvim <dir>`), cd into it and open the tree — an IDE-style view
+  -- instead of netrw. netrw itself is disabled early in init.lua.
+  init = function()
+    vim.api.nvim_create_autocmd("VimEnter", {
+      callback = function(data)
+        if vim.fn.isdirectory(data.file) ~= 1 then
+          return
+        end
+        vim.cmd.cd(data.file)
+        require("nvim-tree.api").tree.open()
+      end,
+    })
+  end,
   config = function()
-    -- Disable netrw so nvim-tree takes over
-    vim.g.loaded_netrw = 1
-    vim.g.loaded_netrwPlugin = 1
     require("nvim-tree").setup({
       view = { width = 32 },
       renderer = { group_empty = true },
