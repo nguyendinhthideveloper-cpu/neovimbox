@@ -8,8 +8,8 @@ directory (`~/.nvx`) — a Neovim config plus a [mise](https://mise.jdx.dev)-bas
 installer, no Docker.
 
 Languages are added on demand (`nvx add go`), so the base stays small
-(~490MB: Neovim + Node + mise), and `nvx uninstall` removes the one directory it
-created. Works on Linux, macOS, and WSL.
+(~490MB: Neovim + Node + mise), and `nvx uninstall` removes everything it
+installed. Works on Linux, macOS, and WSL.
 
 ## Install
 
