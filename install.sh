@@ -19,7 +19,7 @@ REPO_URL="https://github.com/nguyendinhthideveloper-cpu/neovimbox"
 NVX_HOME="${NVX_HOME:-$HOME/.nvx}"
 HOST_BIN="$HOME/.local/bin"
 # Where this script sits (empty/"." when piped via curl | bash).
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)" || HERE=""
 
 info() { printf '\033[32m▸ %s\033[0m\n' "$*"; }
 warn() { printf '\033[33m⚠ %s\033[0m\n' "$*" >&2; }
@@ -179,7 +179,9 @@ PS
   while IFS= read -r f; do [ -n "$f" ] && cp -f "$f" "$fdir/" 2>/dev/null; done <<EOF
 $ttfs
 EOF
-  [ "$os" = "Darwin" ] || { command -v fc-cache >/dev/null 2>&1 && fc-cache -f "$fdir" >/dev/null 2>&1 || true; }
+  if [ "$os" != "Darwin" ] && command -v fc-cache >/dev/null 2>&1; then
+    fc-cache -f "$fdir" >/dev/null 2>&1 || true
+  fi
   info "Installed to $fdir — select 'JetBrainsMono Nerd Font' in your terminal."
   rm -rf "$tmp"
 }
