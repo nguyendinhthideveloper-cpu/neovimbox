@@ -1,0 +1,87 @@
+name: sync-wiki
+
+# docs/ is the source of truth. On every push to main that touches docs/, rebuild
+# the wiki pages from docs/*.md (rewriting relative links to wiki page names and
+# repo-relative source links to absolute URLs) and push them to the wiki repo.
+# The wiki must already be initialized once (create its first page in the UI).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - ".github/workflows/sync-wiki.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-wiki
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build wiki pages from docs/
+        run: |
+          set -euo pipefail
+          base="https://github.com/${GITHUB_REPOSITORY}/blob/main"
+          out="${RUNNER_TEMP}/wiki"
+          mkdir -p "$out"
+
+          banner="<!-- AUTO-GENERATED from docs/ — edit there, not in the wiki. Synced by .github/workflows/sync-wiki.yml -->"
+
+          transform () {
+            echo "$banner"
+            echo
+            sed -E \
+              -e "s#\.\./nvim/#${base}/nvim/#g" \
+              -e "s#\.\./README\.md#${base}/README.md#g" \
+              -e "s#\(ROADMAP\.md\)#(${base}/docs/ROADMAP.md)#g" \
+              -e "s#keybindings\.md#Keybindings#g" \
+              -e "s#troubleshooting\.md#Troubleshooting#g" \
+              -e "s#tools\.md#Tools#g" \
+              -e "s#ai\.md#AI#g"
+          }
+
+          transform < docs/README.md          > "$out/Home.md"
+          transform < docs/keybindings.md      > "$out/Keybindings.md"
+          transform < docs/tools.md            > "$out/Tools.md"
+          transform < docs/ai.md               > "$out/AI.md"
+          transform < docs/troubleshooting.md  > "$out/Troubleshooting.md"
+
+          {
+            echo "$banner"
+            echo
+            echo '### neovimbox wiki'
+            echo
+            echo '- [Home](Home)'
+            echo '- [Keybindings](Keybindings)'
+            echo '- [Languages & tools](Tools)'
+            echo '- [AI assistance](AI)'
+            echo '- [Troubleshooting](Troubleshooting)'
+          } > "$out/_Sidebar.md"
+
+          echo "WIKI_BUILD=$out" >> "$GITHUB_ENV"
+
+      - name: Push to wiki
+        run: |
+          set -euo pipefail
+          git clone --depth 1 \
+            "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.wiki.git" \
+            wiki
+          cp "${WIKI_BUILD}"/*.md wiki/
+          cd wiki
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Wiki already up to date."
+          else
+            git commit -m "docs: sync wiki from docs/ (${GITHUB_SHA:0:7})"
+            git push
+          fi
