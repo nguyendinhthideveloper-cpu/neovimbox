@@ -129,22 +129,22 @@ case "$cmd" in
     read -r -p "WIPE $NVX_HOME + the nvx command? [y/N] " a 2>/dev/null || a=""
     case "$a" in
       y|Y|yes)
-        info "Removing $NVX_HOME (subtrees deleted in parallel)..."
-        # Deleting tens of thousands of small files is IO-bound; a single rm -rf
-        # rarely saturates the disk. Wipe each subtree in its own background rm
-        # so the slow ones (mise, data) overlap — noticeably faster on WSL.
-        pids=""
-        for d in "$NVX_HOME"/*; do
-          [ -e "$d" ] || continue
-          printf '  removing %s/ ...\n' "${d##*/}"
-          rm -rf "$d" &
-          pids="$pids $!"
-        done
-        # shellcheck disable=SC2086 # intentional word-split of the pid list
-        [ -n "$pids" ] && wait $pids 2>/dev/null || true
-        rm -rf "$NVX_HOME"           # sweep hidden leftovers + the dir itself
+        # Deleting the sandbox means unlinking tens of thousands of small files,
+        # which is genuinely slow on WSL. Instead of blocking on `rm -rf`, rename
+        # the sandbox aside (instant on the same filesystem) and drop the command
+        # so uninstall returns immediately; the bulk delete runs detached in the
+        # background (survives closing the terminal).
         rm -f "$HOME/.local/bin/nvx"
-        echo "${GRN}✓ Wiped. No trace left on the machine.${RST}" ;;
+        trash="$NVX_HOME.trash.$$"
+        if mv "$NVX_HOME" "$trash" 2>/dev/null; then
+          nohup rm -rf "$trash" >/dev/null 2>&1 &
+          echo "${GRN}✓ Uninstalled. Leftover files are being deleted in the background.${RST}"
+        else
+          # rename failed (e.g. cross-device sandbox) — fall back to a direct wipe
+          info "Removing $NVX_HOME (this can take a minute)..."
+          rm -rf "$NVX_HOME"
+          echo "${GRN}✓ Wiped. No trace left on the machine.${RST}"
+        fi ;;
       *) echo "Cancelled." ;;
     esac
     ;;
