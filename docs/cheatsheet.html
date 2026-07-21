@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>nvx — keybinding cheatsheet</title>
+<style>
+  /* Catppuccin — Latte (light) as the base tokens, Mocha for dark. */
+  :root {
+    --bg: #eff1f5; --bg2: #e6e9ef; --surface: #dce0e8; --surface2: #bcc0cc;
+    --text: #4c4f69; --subtext: #5c5f77; --overlay: #7c7f93; --border: #ccd0da;
+    --accent: #8839ef;
+    --blue:#1e66f5; --green:#40a02b; --peach:#fe640b; --yellow:#df8e1d;
+    --teal:#179299; --red:#d20f39; --sky:#209fb5; --mauve:#8839ef;
+    --lavender:#7287fd; --maroon:#e64553;
+    --kbd-bg:#ffffff; --kbd-border:#bcc0cc; --kbd-text:#4c4f69; --kbd-shadow:#bcc0cc;
+    --shadow: 0 1px 2px rgba(76,79,105,.08), 0 8px 24px rgba(76,79,105,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:#1e1e2e; --bg2:#181825; --surface:#313244; --surface2:#45475a;
+      --text:#cdd6f4; --subtext:#a6adc8; --overlay:#6c7086; --border:#313244;
+      --accent:#cba6f7;
+      --blue:#89b4fa; --green:#a6e3a1; --peach:#fab387; --yellow:#f9e2af;
+      --teal:#94e2d5; --red:#f38ba8; --sky:#89dceb; --mauve:#cba6f7;
+      --lavender:#b4befe; --maroon:#eba0ac;
+      --kbd-bg:#313244; --kbd-border:#45475a; --kbd-text:#cdd6f4; --kbd-shadow:#11111b;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #eff1f5; --bg2: #e6e9ef; --surface: #dce0e8; --surface2: #bcc0cc;
+    --text: #4c4f69; --subtext: #5c5f77; --overlay: #7c7f93; --border: #ccd0da;
+    --accent: #8839ef;
+    --blue:#1e66f5; --green:#40a02b; --peach:#fe640b; --yellow:#df8e1d;
+    --teal:#179299; --red:#d20f39; --sky:#209fb5; --mauve:#8839ef;
+    --lavender:#7287fd; --maroon:#e64553;
+    --kbd-bg:#ffffff; --kbd-border:#bcc0cc; --kbd-text:#4c4f69; --kbd-shadow:#bcc0cc;
+    --shadow: 0 1px 2px rgba(76,79,105,.08), 0 8px 24px rgba(76,79,105,.06);
+  }
+  :root[data-theme="dark"] {
+    --bg:#1e1e2e; --bg2:#181825; --surface:#313244; --surface2:#45475a;
+    --text:#cdd6f4; --subtext:#a6adc8; --overlay:#6c7086; --border:#313244;
+    --accent:#cba6f7;
+    --blue:#89b4fa; --green:#a6e3a1; --peach:#fab387; --yellow:#f9e2af;
+    --teal:#94e2d5; --red:#f38ba8; --sky:#89dceb; --mauve:#cba6f7;
+    --lavender:#b4befe; --maroon:#eba0ac;
+    --kbd-bg:#313244; --kbd-border:#45475a; --kbd-text:#cdd6f4; --kbd-shadow:#11111b;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+    font-size: 15px;
+  }
+  .mono { font-family: "JetBrains Mono", "JetBrainsMono Nerd Font", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+  /* ---- statusline header ---- */
+  header {
+    position: sticky; top: 0; z-index: 20;
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(6px);
+  }
+  .bar {
+    max-width: 1180px; margin: 0 auto;
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 20px; flex-wrap: wrap;
+  }
+  .mode {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-weight: 700; font-size: 12px; letter-spacing: .12em;
+    color: var(--bg2); background: var(--accent);
+    padding: 4px 10px 4px 12px; border-radius: 4px;
+    text-transform: uppercase;
+  }
+  .brand { display: flex; align-items: baseline; gap: 10px; margin-right: auto; }
+  .brand h1 {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 18px; font-weight: 700; margin: 0; letter-spacing: -.01em;
+  }
+  .cursor {
+    display: inline-block; width: .55em; height: 1.05em; translate: 0 .13em;
+    background: var(--green); animation: blink 1.1s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  .brand .sub { color: var(--overlay); font-size: 13px; }
+
+  .search {
+    position: relative; display: flex; align-items: center;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0 10px; min-width: 200px; flex: 1 1 220px; max-width: 360px;
+  }
+  .search svg { width: 15px; height: 15px; color: var(--overlay); flex: none; }
+  .search input {
+    border: 0; background: transparent; color: var(--text);
+    font: inherit; padding: 7px 8px; width: 100%; outline: none;
+    font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 13px;
+  }
+  .search kbd.hint {
+    font-family: "JetBrains Mono", monospace; font-size: 11px; color: var(--overlay);
+    border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; flex: none;
+  }
+  button.theme {
+    font: inherit; cursor: pointer; color: var(--subtext);
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; padding: 7px 10px; display: flex; align-items: center; gap: 6px;
+    font-size: 13px;
+  }
+  button.theme:hover { border-color: var(--accent); color: var(--text); }
+  button.theme svg { width: 15px; height: 15px; }
+
+  /* ---- content ---- */
+  main { max-width: 1180px; margin: 0 auto; padding: 22px 20px 60px; }
+  .lede {
+    color: var(--subtext); font-size: 14px; margin: 4px 0 22px;
+    display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center;
+  }
+  .lede b { color: var(--text); font-weight: 600; }
+
+  .grid {
+    display: grid; gap: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+    align-items: start;
+  }
+  .group {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 16px 6px; box-shadow: var(--shadow);
+  }
+  .group > h2 {
+    display: flex; align-items: center; gap: 9px;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 13px; font-weight: 700; letter-spacing: .02em;
+    margin: 2px 0 10px; color: var(--text);
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--cat, var(--accent)); flex: none; }
+  .group[data-cat="blue"]   { --cat: var(--blue); }
+  .group[data-cat="green"]  { --cat: var(--green); }
+  .group[data-cat="peach"]  { --cat: var(--peach); }
+  .group[data-cat="yellow"] { --cat: var(--yellow); }
+  .group[data-cat="teal"]   { --cat: var(--teal); }
+  .group[data-cat="red"]    { --cat: var(--red); }
+  .group[data-cat="sky"]    { --cat: var(--sky); }
+  .group[data-cat="mauve"]  { --cat: var(--mauve); }
+  .group[data-cat="maroon"] { --cat: var(--maroon); }
+  .group[data-cat="overlay"]{ --cat: var(--overlay); }
+
+  .row {
+    display: grid; grid-template-columns: 1fr auto; gap: 10px 14px;
+    align-items: center; padding: 7px 0; border-top: 1px solid var(--border);
+  }
+  .row:first-of-type { border-top: 0; }
+  .row .desc { font-size: 13.5px; color: var(--subtext); }
+  .row .keys { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+  .sep { color: var(--overlay); align-self: center; font-size: 12px; padding: 0 1px; }
+
+  kbd {
+    font-family: "JetBrains Mono", "JetBrainsMono Nerd Font", ui-monospace, monospace;
+    font-size: 12px; line-height: 1.4; white-space: nowrap;
+    color: var(--kbd-text); background: var(--kbd-bg);
+    border: 1px solid var(--kbd-border); border-bottom-width: 2px;
+    border-radius: 5px; padding: 2px 6px;
+  }
+  kbd.lead { color: var(--cat, var(--accent)); border-color: var(--cat, var(--accent)); }
+
+  .mode-badge {
+    font-family: "JetBrains Mono", monospace; font-size: 10.5px; color: var(--overlay);
+    border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; margin-left: 2px;
+  }
+
+  .note {
+    grid-column: 1 / -1; margin: 4px 0 8px; padding: 8px 11px;
+    background: var(--surface); border-radius: 7px;
+    font-size: 12.5px; color: var(--subtext);
+  }
+  .note code { font-family: "JetBrains Mono", monospace; color: var(--text); }
+
+  .empty { display: none; color: var(--overlay); text-align: center; padding: 60px 0; font-size: 15px; }
+  .empty.show { display: block; }
+  .empty .mono { color: var(--red); }
+
+  footer {
+    max-width: 1180px; margin: 0 auto; padding: 22px 20px 40px;
+    border-top: 1px solid var(--border); color: var(--overlay); font-size: 13px;
+    display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center;
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+  footer .mono { color: var(--subtext); }
+
+  a:focus-visible, button:focus-visible, input:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .cursor { animation: none; }
+  }
+  @media (max-width: 520px) {
+    .brand .sub { display: none; }
+    .row { grid-template-columns: 1fr; }
+    .row .keys { justify-content: flex-start; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <span class="mode">Normal</span>
+    <div class="brand">
+      <h1>nvx<span class="cursor" aria-hidden="true"></span></h1>
+      <span class="sub">keybinding cheatsheet</span>
+    </div>
+    <label class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input id="q" type="search" placeholder="filter keys or actions…" aria-label="Filter keybindings" autocomplete="off">
+      <kbd class="hint">/</kbd>
+    </label>
+    <button class="theme" id="theme" aria-label="Toggle color theme">
+      <svg id="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"></svg>
+      <span id="theme-label">Theme</span>
+    </button>
+  </div>
+</header>
+
+<main>
+  <p class="lede">
+    <span><b class="mono">&lt;leader&gt;</b> is <b>Space</b>. In Neovim, press <b class="mono">&lt;leader&gt;?</b> or run <b class="mono">:NvxHelp</b> for this list.</span>
+    <span>LSP keys bind once a server attaches — <b class="mono">:LspInfo</b> to check.</span>
+  </p>
+  <div class="grid" id="grid"></div>
+  <div class="empty" id="empty">no keys match <span class="mono" id="empty-q"></span></div>
+</main>
+
+<footer>
+  <span class="mono">~/.nvx</span>
+  <span>Full docs:</span>
+  <a href="keybindings.md">keybindings</a>
+  <a href="tools.md">tools</a>
+  <a href="ai.md">AI</a>
+  <a href="troubleshooting.md">troubleshooting</a>
+  <span style="margin-left:auto" class="mono">Catppuccin · JetBrains Mono</span>
+</footer>
+
+<script>
+  const DATA = [
+    { title: "Core editing", cat: "overlay", items: [
+      { k: ["<leader>w"], d: "Save file" },
+      { k: ["<leader>q"], d: "Close window" },
+      { k: ["<Esc>"], d: "Clear search highlight" },
+      { k: ["<C-h>","<C-j>","<C-k>","<C-l>"], d: "Move between splits" },
+      { k: ["<"],  d: "Indent left, keep selection", m: "v" },
+      { k: [">"],  d: "Indent right, keep selection", m: "v" },
+      { k: ["J"],  d: "Move selected lines down", m: "v" },
+      { k: ["K"],  d: "Move selected lines up", m: "v" },
+    ]},
+    { title: "Find & format", cat: "blue", items: [
+      { k: ["<leader>ff"], d: "Find files" },
+      { k: ["<leader>fg"], d: "Live grep (needs ripgrep)" },
+      { k: ["<leader>fb"], d: "Buffer list" },
+      { k: ["<leader>fr"], d: "Recent files" },
+      { k: ["<leader>fh"], d: "Help tags" },
+      { k: ["<leader>ft"], d: "Find TODO comments" },
+      { k: ["<leader>fR"], d: "Find & replace (grug-far)" },
+      { k: ["<leader>cf"], d: "Format buffer (conform)" },
+    ]},
+    { title: "Code / LSP", cat: "green", note: "This config navigates via LSP — use <code>gd</code>, not <code>&lt;C-]&gt;</code> (no tags file).", items: [
+      { k: ["gd"], d: "Go to definition" },
+      { k: ["gr"], d: "References" },
+      { k: ["gI"], d: "Implementation" },
+      { k: ["K"],  d: "Hover documentation" },
+      { k: ["<leader>rn"], d: "Rename symbol" },
+      { k: ["<leader>ca"], d: "Code action" },
+      { k: ["<leader>f"],  d: "Format buffer" },
+      { k: ["[d"], d: "Previous diagnostic" },
+      { k: ["]d"], d: "Next diagnostic" },
+      { k: ["<leader>o"], d: "Outline (symbols)" },
+    ]},
+    { title: "Git", cat: "peach", items: [
+      { k: ["<leader>gg"], d: "Neogit (stage / commit / push)" },
+      { k: ["<leader>gd"], d: "Diff view" },
+      { k: ["<leader>gh"], d: "File history" },
+      { k: ["<leader>gl"], d: "Git graph (commit tree)" },
+      { k: ["]c"], d: "Next hunk" },
+      { k: ["[c"], d: "Previous hunk" },
+      { k: ["<leader>hs"], d: "Stage hunk" },
+      { k: ["<leader>hr"], d: "Reset hunk" },
+      { k: ["<leader>hp"], d: "Preview hunk" },
+      { k: ["<leader>hb"], d: "Blame line" },
+    ]},
+    { title: "Buffers & windows", cat: "yellow", items: [
+      { k: ["]b"], d: "Next buffer" },
+      { k: ["[b"], d: "Previous buffer" },
+      { k: ["<leader>bd"], d: "Close buffer" },
+      { k: ["<leader>bp"], d: "Pin buffer" },
+      { k: ["<C-h>","<C-l>"], d: "Move to left / right split" },
+    ]},
+    { title: "Navigation", cat: "teal", items: [
+      { k: ["<leader>e"], d: "Toggle file tree" },
+      { k: ["<C-h>"], d: "Focus file tree (left split)" },
+      { k: ["s"], d: "Flash jump (2 target chars)", m: "n/x/o" },
+      { k: ["S"], d: "Flash treesitter jump", m: "n/x/o" },
+      { k: ["r"], d: "Remote flash", m: "o" },
+      { k: ["<leader>ma"], d: "Harpoon: pin file" },
+      { k: ["<C-e>"], d: "Harpoon: quick menu" },
+      { k: ["<leader>m1","…","<leader>m4"], d: "Harpoon: jump to pinned file" },
+    ]},
+    { title: "Terminal · Test · Debug", cat: "red", items: [
+      { k: ["<C-\\>"], d: "Toggle floating terminal", m: "n/t" },
+      { k: ["<leader>tf"], d: "Terminal (float)" },
+      { k: ["<leader>th"], d: "Terminal (horizontal)" },
+      { k: ["<leader>tt"], d: "Test nearest function" },
+      { k: ["<leader>tr"], d: "Test whole file" },
+      { k: ["<leader>td"], d: "Debug nearest test" },
+      { k: ["<leader>ts"], d: "Test summary panel" },
+      { k: ["<leader>to"], d: "Test output" },
+      { k: ["<leader>tw"], d: "Test watch" },
+      { k: ["<F5>"], d: "Debug: continue / start" },
+      { k: ["<F10>"], d: "Debug: step over" },
+      { k: ["<F11>"], d: "Debug: step into" },
+      { k: ["<F12>"], d: "Debug: step out" },
+      { k: ["<leader>db"], d: "Toggle breakpoint" },
+      { k: ["<leader>dr"], d: "Open REPL" },
+      { k: ["<leader>du"], d: "Toggle debug UI" },
+    ]},
+    { title: "Diagnostics (trouble)", cat: "maroon", items: [
+      { k: ["<leader>xx"], d: "Diagnostics (project)" },
+      { k: ["<leader>xX"], d: "Diagnostics (buffer)" },
+      { k: ["<leader>xs"], d: "Symbols" },
+      { k: ["<leader>xq"], d: "Quickfix list" },
+      { k: ["<leader>xl"], d: "Location list" },
+      { k: ["<leader>xt"], d: "TODO list" },
+    ]},
+    { title: "Folds · Session · DB", cat: "sky", items: [
+      { k: ["zR"], d: "Open all folds" },
+      { k: ["zM"], d: "Close all folds" },
+      { k: ["zK"], d: "Peek folded lines" },
+      { k: ["<leader>ss"], d: "Save session" },
+      { k: ["<leader>sr"], d: "Restore session" },
+      { k: ["<leader>D"], d: "Toggle database UI" },
+    ]},
+    { title: "AI (CodeCompanion)", cat: "mauve", note: "Needs <code>ANTHROPIC_API_KEY</code> in the environment before launch.", items: [
+      { k: ["<leader>ac"], d: "Toggle AI chat", m: "n/v" },
+      { k: ["<leader>aa"], d: "AI actions palette", m: "n/v" },
+      { k: ["<leader>ai"], d: "Inline edit (type request)", m: "n/v" },
+    ]},
+  ];
+
+  const LEAD = "<leader>";
+  function keycap(tok) {
+    if (tok === "…") return '<span class="sep">…</span>';
+    // split "<leader>xx" so <leader> reads as its own coloured cap
+    if (tok.startsWith(LEAD)) {
+      const rest = tok.slice(LEAD.length);
+      return '<kbd class="lead">&lt;leader&gt;</kbd>' + (rest ? '<kbd>' + esc(rest) + '</kbd>' : '');
+    }
+    return '<kbd>' + esc(tok) + '</kbd>';
+  }
+  function esc(s){ return s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+  const grid = document.getElementById('grid');
+  DATA.forEach(g => {
+    const sec = document.createElement('section');
+    sec.className = 'group';
+    sec.dataset.cat = g.cat;
+    let html = '<h2><span class="dot"></span>' + g.title + '</h2>';
+    if (g.note) html += '<div class="note">' + g.note + '</div>';
+    g.items.forEach(it => {
+      const keys = it.k.map(keycap).join('');
+      const mode = it.m ? '<span class="mode-badge">' + it.m + '</span>' : '';
+      const hay = (it.k.join(' ') + ' ' + it.d + ' ' + (it.m||'')).toLowerCase();
+      html += '<div class="row" data-h="' + hay.replace(/"/g,'') + '">'
+            + '<span class="desc">' + it.d + '</span>'
+            + '<span class="keys">' + keys + mode + '</span></div>';
+    });
+    sec.innerHTML = html;
+    grid.appendChild(sec);
+  });
+
+  // live filter
+  const q = document.getElementById('q');
+  const empty = document.getElementById('empty');
+  const emptyQ = document.getElementById('empty-q');
+  q.addEventListener('input', () => {
+    const term = q.value.trim().toLowerCase();
+    let any = false;
+    document.querySelectorAll('.group').forEach(sec => {
+      let shown = 0;
+      sec.querySelectorAll('.row').forEach(r => {
+        const hit = !term || r.dataset.h.includes(term);
+        r.style.display = hit ? '' : 'none';
+        if (hit) shown++;
+      });
+      sec.style.display = shown ? '' : 'none';
+      if (shown) any = true;
+    });
+    empty.classList.toggle('show', !any);
+    emptyQ.textContent = q.value;
+  });
+
+  // "/" focuses search
+  document.addEventListener('keydown', e => {
+    if (e.key === '/' && document.activeElement !== q) { e.preventDefault(); q.focus(); }
+    if (e.key === 'Escape' && document.activeElement === q) { q.value=''; q.dispatchEvent(new Event('input')); q.blur(); }
+  });
+
+  // theme toggle
+  const sun = '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>';
+  const moon = '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>';
+  const icon = document.getElementById('theme-icon');
+  const label = document.getElementById('theme-label');
+  function current(){ return document.documentElement.getAttribute('data-theme')
+      || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); }
+  function render(){ const d = current()==='dark'; icon.innerHTML = d ? sun : moon; label.textContent = d ? 'Light' : 'Dark'; }
+  document.getElementById('theme').addEventListener('click', () => {
+    const next = current()==='dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next); render();
+  });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render);
+  render();
+</script>
+</body>
+</html>

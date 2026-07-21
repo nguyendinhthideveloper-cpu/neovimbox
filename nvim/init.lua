@@ -15,6 +15,7 @@ vim.g.have_nerd_font = os.getenv("NVX_NERD_FONT") ~= "0"
 
 require("config.options")
 require("config.keymaps")
+require("config.help")
 
 -- Bootstrap lazy.nvim
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
