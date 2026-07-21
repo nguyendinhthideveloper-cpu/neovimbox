@@ -20,7 +20,11 @@ return {
       auto_save_enabled = true,
       -- Close nvim-tree before saving, else it's restored as a broken empty
       -- "NvimTree_1" buffer (a known session-manager + file-explorer conflict).
-      pre_save_cmds = { function() pcall(vim.cmd, "NvimTreeClose") end },
+      pre_save_cmds = {
+        function()
+          pcall(vim.cmd, "NvimTreeClose")
+        end,
+      },
       bypass_save_filetypes = { "NvimTree", "alpha", "dashboard" },
       -- Self-heal: wipe any phantom NvimTree buffers a previously-saved (bad)
       -- session may recreate on restore, so old sessions clean themselves up.
