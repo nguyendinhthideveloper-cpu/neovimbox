@@ -42,7 +42,7 @@ for treesitter, clangd, and cgo/rust. `install.sh` warns if any are missing;
 
 | Command | Purpose |
 |---|---|
-| `nvx` | open Neovim |
+| `nvx [path]` | open Neovim — the cwd, a directory (`nvx .`), or a file |
 | `nvx add <lang> [ver]` | add a language (go / python / rust / jvm / node / cpp): runtime + LSP/format/lint/DAP |
 | `nvx add-tool <tool[@ver]...>` | add a CLI tool via mise (docker-cli, kubectl, gh, lazygit, …) |
 | `nvx exec <cmd...>` | run a command in the sandbox env (e.g. `nvx exec go version`) |

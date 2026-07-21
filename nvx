@@ -7,7 +7,7 @@
 # pointing XDG_*/MISE_* at the sandbox — it never touches ~/.config, ~/.local/
 # share or your .bashrc. Wipe it all with `nvx uninstall` (delete one dir).
 #
-#   nvx                      open Neovim (inside the sandbox)
+#   nvx [path]               open Neovim (the cwd, a dir, or a file) in the sandbox
 #   nvx shell                open a shell with the sandbox env (nvim, go... sandboxed)
 #   nvx exec <cmd...>        run a command in the sandbox env (e.g. nvx exec java -version)
 #   nvx add <lang> [ver]     add a language: go|python|rust|jvm|node|cpp (runtime + LSP/format/lint/DAP)
@@ -133,5 +133,7 @@ case "$cmd" in
     esac
     ;;
   help|-h|--help) sed -n '10,21p' "$0" | sed 's/^# \{0,1\}//' ;;
-  *) err "Unknown command: $cmd"; sed -n '10,21p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  *)  # a path (file or dir, e.g. `nvx .` or `nvx ~/proj`) opens in Neovim
+    [ -e "$cmd" ] && exec nvim "$cmd" "$@"
+    err "Unknown command: $cmd"; sed -n '10,21p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac
