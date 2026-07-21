@@ -16,12 +16,18 @@ return {
           return
         end
         vim.cmd.cd(data.file)
+        -- Turn the directory buffer into an empty editor buffer (the right pane)
+        -- and open nvim-tree as a left sidebar → IDE-style split, not full width.
+        local dirbuf = data.buf
+        vim.cmd.enew()
+        pcall(vim.cmd.bwipeout, dirbuf)
         require("nvim-tree.api").tree.open()
       end,
     })
   end,
   config = function()
     require("nvim-tree").setup({
+      hijack_directories = { enable = false }, -- our VimEnter autocmd builds the layout
       view = { width = 32 },
       renderer = { group_empty = true },
       filters = { dotfiles = false },
