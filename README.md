@@ -3,9 +3,9 @@
 [![CI](https://github.com/nguyendinhthideveloper-cpu/neovimbox/actions/workflows/ci.yml/badge.svg)](https://github.com/nguyendinhthideveloper-cpu/neovimbox/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-A small tool that turns Neovim into a multi-language IDE inside a single
-directory (`~/.nvx`) — a Neovim config plus a [mise](https://mise.jdx.dev)-based
-installer, no Docker.
+A small tool that turns [Neovim](https://github.com/neovim/neovim) into a
+multi-language IDE inside a single directory (`~/.nvx`) — a Neovim config plus a
+[mise](https://mise.jdx.dev)-based installer, no Docker.
 
 Languages are added on demand (`nvx add go`), so the base stays small
 (~490MB: Neovim + Node + mise), and `nvx uninstall` removes everything it
