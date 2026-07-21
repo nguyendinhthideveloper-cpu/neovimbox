@@ -129,15 +129,20 @@ case "$cmd" in
     read -r -p "WIPE $NVX_HOME + the nvx command? [y/N] " a 2>/dev/null || a=""
     case "$a" in
       y|Y|yes)
-        info "Removing $NVX_HOME (tens of thousands of small files — this can take a minute)..."
-        # Delete the big subdirs one at a time so progress is visible instead of
-        # one silent `rm -rf` that looks hung. mise/data are the slow ones.
-        for d in mise data cache state config bin; do
-          [ -e "$NVX_HOME/$d" ] || continue
-          printf '  removing %s/ ...\n' "$d"
-          rm -rf "$NVX_HOME/$d"
+        info "Removing $NVX_HOME (subtrees deleted in parallel)..."
+        # Deleting tens of thousands of small files is IO-bound; a single rm -rf
+        # rarely saturates the disk. Wipe each subtree in its own background rm
+        # so the slow ones (mise, data) overlap — noticeably faster on WSL.
+        pids=""
+        for d in "$NVX_HOME"/*; do
+          [ -e "$d" ] || continue
+          printf '  removing %s/ ...\n' "${d##*/}"
+          rm -rf "$d" &
+          pids="$pids $!"
         done
-        rm -rf "$NVX_HOME"           # sweep any leftovers + the dir itself
+        # shellcheck disable=SC2086 # intentional word-split of the pid list
+        [ -n "$pids" ] && wait $pids 2>/dev/null || true
+        rm -rf "$NVX_HOME"           # sweep hidden leftovers + the dir itself
         rm -f "$HOME/.local/bin/nvx"
         echo "${GRN}✓ Wiped. No trace left on the machine.${RST}" ;;
       *) echo "Cancelled." ;;
