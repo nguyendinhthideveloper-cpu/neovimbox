@@ -12,11 +12,11 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: shellcheck (install.sh + nvx)
         run: LC_ALL=C.UTF-8 shellcheck install.sh nvx
       - name: stylua (nvim/ — check formatting)
-        uses: JohnnyMorganz/stylua-action@v4
+        uses: JohnnyMorganz/stylua-action@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           version: latest
@@ -34,7 +34,7 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # install.sh prerequisites (C compiler + unzip); git/curl ship on the runner.
       - name: Prerequisites
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential unzip
@@ -65,7 +65,7 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # macOS runners ship clang (Xcode CLT), git, curl, unzip — no extra prereqs.
       - name: Install sandbox (install.sh)
         run: ./install.sh
