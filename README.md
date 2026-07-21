@@ -79,10 +79,14 @@ container. Set `NVX_HOME` to put the sandbox somewhere other than `~/.nvx`.
 
 ## Neovim
 
-`<leader>` is Space; press it and which-key shows the available keys. LSP,
-formatting, linting, and debugging turn on per language automatically. Plugins are
-pinned in [`nvim/lazy-lock.json`](nvim/lazy-lock.json); use `:Lazy` / `:Mason` to
-manage them.
+`<leader>` is Space; press it and which-key shows the available keys, or run
+`:NvxHelp` (`<leader>?`) for a cheatsheet. LSP, formatting, linting, and debugging
+turn on per language automatically. Plugins are pinned in
+[`nvim/lazy-lock.json`](nvim/lazy-lock.json); use `:Lazy` / `:Mason` to manage them.
+
+Full docs live in [`docs/`](docs/README.md): [keybindings](docs/keybindings.md),
+[languages & tools](docs/tools.md), [AI](docs/ai.md), and
+[troubleshooting](docs/troubleshooting.md).
 
 Icons need a [Nerd Font](https://www.nerdfonts.com). `install.sh` installs
 JetBrainsMono Nerd Font for you and, on WSL, also sets it as the Windows Terminal
@@ -97,7 +101,7 @@ plain-text fallback instead of `◆`/`□` placeholders. On other terminals, sel
 install.sh   installer (builds ~/.nvx)
 nvx          the CLI (language install lives in the lang_add function)
 nvim/        Neovim config
-docs/        roadmap
+docs/        wiki (keybindings, tools, AI, troubleshooting) + roadmap
 ```
 
 Contributing: [CONTRIBUTING.md](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [Security](SECURITY.md).
