@@ -15,13 +15,23 @@
 ## Installation (macOS / Linux / WSL)
 
 ```bash
-git clone <repo-url> && cd <repo>
-./install.sh          # install mise -> Neovim/Node/ripgrep/fd -> nvim config (one-time)
-exec $SHELL           # load the new PATH (or open a new terminal)
-nvx                   # open Neovim — IDE ready
-```
+# one-liner
+curl -fsSL https://raw.githubusercontent.com/nguyendinhthideveloper-cpu/neovimbox/main/install.sh | bash
 
-> **Prerequisite** (the sandbox needs no root): `git`, `curl`, `unzip`, and a C compiler (Ubuntu: `sudo apt install build-essential`; macOS: `xcode-select --install`) — needed for treesitter parsers, rust-link, cgo, clangd. `install.sh` warns if any are missing.
+# …or from a clone
+git clone https://github.com/nguyendinhthideveloper-cpu/neovimbox && cd neovimbox && ./install.sh
+```
+Then open a new terminal (or `exec $SHELL`) and run `nvx` — the IDE is ready. The
+install is one-time; it builds `~/.nvx` (mise + Neovim/Node/ripgrep/fd + config).
+
+> **Prerequisites** (no root needed): `git`, `curl`, `unzip`, and a C compiler —
+> for treesitter parsers, rust-link, cgo, clangd:
+> - Debian/Ubuntu: `sudo apt install build-essential unzip`
+> - Fedora: `sudo dnf groupinstall 'Development Tools' && sudo dnf install unzip`
+> - Arch: `sudo pacman -S base-devel unzip`
+> - macOS: `xcode-select --install` (git/curl/unzip already ship with macOS)
+>
+> `install.sh` warns if any are missing.
 
 ---
 

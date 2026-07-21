@@ -7,21 +7,19 @@
 # (default ~/.nvx) by pointing XDG_*/MISE_* there. The host gets a SINGLE symlink,
 # the `nvx` command.
 #
+# Install (either way, Linux / macOS / WSL):
+#   curl -fsSL https://raw.githubusercontent.com/nguyendinhthideveloper-cpu/neovimbox/main/install.sh | bash
+#   # or: git clone https://github.com/nguyendinhthideveloper-cpu/neovimbox && cd neovimbox && ./install.sh
+#
 # Wipe everything (Neovim included): `nvx uninstall`  ->  deletes exactly $NVX_HOME.
-#
-# After install:
-#   nvx                       open Neovim (in the sandbox)
-#   nvx add go                add a language
-#   nvx add-tool java@25 maven@3.9.6 docker-cli    add any version/tool
-#   nvx list | nvx update | nvx uninstall
-#
-# Move machines: git clone repo + ./install.sh (rebuilds an identical sandbox).
 # ============================================================================
 set -euo pipefail
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_URL="https://github.com/nguyendinhthideveloper-cpu/neovimbox"
 NVX_HOME="${NVX_HOME:-$HOME/.nvx}"
 HOST_BIN="$HOME/.local/bin"
+# Where this script sits (empty/"." when piped via curl | bash).
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
 
 info() { printf '\033[32m▸ %s\033[0m\n' "$*"; }
 warn() { printf '\033[33m⚠ %s\033[0m\n' "$*" >&2; }
@@ -29,15 +27,26 @@ warn() { printf '\033[33m⚠ %s\033[0m\n' "$*" >&2; }
 # 0) Prerequisites (can't auto-install — need root / differ per OS) -----------
 miss=0
 need() { command -v "$1" >/dev/null 2>&1 || { warn "missing '$1' — $2"; miss=1; }; }
-need curl  "apt install curl / brew install curl"
-need git   "apt install git / xcode-select --install"
-need unzip "apt install unzip / brew install unzip (mason needs it)"
+need curl  "apt install curl · dnf install curl · brew install curl"
+need git   "apt install git · dnf install git · pacman -S git · xcode-select --install"
+need unzip "apt install unzip · dnf install unzip · pacman -S unzip · brew install unzip (mason needs it)"
 if ! command -v cc >/dev/null 2>&1 && ! command -v gcc >/dev/null 2>&1 && ! command -v clang >/dev/null 2>&1; then
   warn "missing C compiler (cc/gcc/clang) — needed for treesitter/rust-link/cgo/cpp"
-  warn "  Ubuntu: sudo apt install build-essential   |   macOS: xcode-select --install"
+  warn "  Debian/Ubuntu: apt install build-essential · Fedora: dnf groupinstall 'Development Tools'"
+  warn "  Arch: pacman -S base-devel · macOS: xcode-select --install"
   miss=1
 fi
 [ "$miss" -eq 0 ] || warn "Missing prerequisites above — continuing, but related parts may fail."
+
+# 0.5) Source: run from a clone (script sits next to nvx+nvim), else fetch it --
+if [ -n "$HERE" ] && [ -f "$HERE/nvx" ] && [ -d "$HERE/nvim" ]; then
+  SRC="$HERE"
+else
+  SRC="$NVX_HOME/src"
+  info "Fetching neovimbox ($REPO_URL)..."
+  rm -rf "$SRC"; mkdir -p "$(dirname "$SRC")"
+  git clone --depth 1 "$REPO_URL" "$SRC"
+fi
 
 # 1) Sandbox layout ----------------------------------------------------------
 mkdir -p "$NVX_HOME"/bin "$NVX_HOME"/config "$NVX_HOME"/data \
@@ -65,10 +74,10 @@ info "Installing Neovim + Node + ripgrep + fd via mise..."
 mise use -g neovim@latest node@20 ripgrep fd
 mise reshim; hash -r 2>/dev/null || true
 
-# 5) Copy Neovim config + command into the sandbox (self-contained; repo can be deleted after) ---
+# 5) Copy Neovim config + command into the sandbox (self-contained) ----------
 rm -rf "$NVX_HOME/config/nvim"
-cp -r "$REPO_DIR/nvim" "$NVX_HOME/config/nvim"
-cp "$REPO_DIR/nvx" "$NVX_HOME/bin/nvx"
+cp -r "$SRC/nvim" "$NVX_HOME/config/nvim"
+cp "$SRC/nvx" "$NVX_HOME/bin/nvx"
 chmod +x "$NVX_HOME/bin/nvx"
 info "Config + command are now inside $NVX_HOME"
 

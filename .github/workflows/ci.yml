@@ -1,6 +1,6 @@
 name: ci
 
-# Lint the scripts/Lua + smoke-test the native install (install.sh -> nvx) on a clean Ubuntu.
+# Lint the scripts/Lua + smoke-test the native install (install.sh -> nvx) on Ubuntu AND macOS.
 on:
   push:
     branches: [main]
@@ -55,3 +55,28 @@ jobs:
           test ! -e "$HOME/.config/nvim"        || { echo "leaked ~/.config/nvim"; exit 1; }
           test ! -e "$HOME/.local/share/nvim"   || { echo "leaked ~/.local/share/nvim"; exit 1; }
           echo "✓ host clean — everything under ~/.nvx"
+
+  smoke-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      # macOS runners ship clang (Xcode CLT), git, curl, unzip — no extra prereqs.
+      - name: Install sandbox (install.sh)
+        run: ./install.sh
+      - name: Add ~/.local/bin to PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Smoke — nvx on macOS
+        run: |
+          set -euo pipefail
+          nvx version
+          nvx doctor
+          nvx exec nvim --version | head -1
+          nvx add go
+          nvx exec go version
+          nvx list
+          echo "✓ nvx sandbox OK (macOS)"
+      - name: Sandbox stays inside ~/.nvx (no scatter onto host)
+        run: |
+          test ! -e "$HOME/.config/nvim"        || { echo "leaked ~/.config/nvim"; exit 1; }
+          test ! -e "$HOME/.local/share/nvim"   || { echo "leaked ~/.local/share/nvim"; exit 1; }
+          echo "✓ host clean (macOS)"
