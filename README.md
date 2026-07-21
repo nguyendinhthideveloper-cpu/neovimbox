@@ -42,7 +42,7 @@ for treesitter, clangd, and cgo/rust. `install.sh` warns if any are missing;
 
 | Command | Purpose |
 |---|---|
-| `nvx [path]` | open Neovim — the cwd, a directory (`nvx .`), or a file |
+| `nvx [path\|-flag\|+cmd]` | open Neovim — the cwd, a dir (`nvx .`), a file, or pass nvim flags through (`nvx +qa`, `nvx -R file`) |
 | `nvx add <lang> [ver]` | add a language (go / python / rust / jvm / node / cpp): runtime + LSP/format/lint/DAP |
 | `nvx add-tool <tool[@ver]...>` | add a CLI tool via mise (docker-cli, kubectl, gh, lazygit, …) |
 | `nvx exec <cmd...>` | run a command in the sandbox env (e.g. `nvx exec go version`) |
@@ -50,6 +50,9 @@ for treesitter, clangd, and cgo/rust. `install.sh` warns if any are missing;
 | `nvx rm / list / update` | remove a tool / list installed / upgrade |
 | `nvx doctor / version / home` | check prerequisites / print versions / print the sandbox path |
 | `nvx uninstall` | remove the sandbox and the `nvx` command |
+
+nvim flags and Ex commands pass straight through — except `nvx --version`/`-v` and
+`nvx --help`/`-h`, which report nvx itself; use `nvx nvim --version` for Neovim's.
 
 C/C++: `nvx add cpp` sets up clangd/clang-format/codelldb; the compiler comes from
 the host. DB clients (psql/mysql/redis) are OS packages — install them from the host.
