@@ -10,6 +10,8 @@ The project is a native Neovim IDE packaged in the `~/.nvx` sandbox. Only three 
 
 ## Lint (matches CI `.github/workflows/ci.yml`)
 
+Run everything with `make lint` (and `make fmt` to format), or individually:
+
 ```bash
 shellcheck install.sh nvx          # shell (uses .shellcheckrc)
 stylua --check nvim/               # format Lua (.stylua.toml)
