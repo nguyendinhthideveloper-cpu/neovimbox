@@ -128,7 +128,10 @@ case "$cmd" in
   uninstall)
     read -r -p "WIPE $NVX_HOME + the nvx command? [y/N] " a 2>/dev/null || a=""
     case "$a" in
-      y|Y|yes) rm -rf "$NVX_HOME"; rm -f "$HOME/.local/bin/nvx"; echo "${GRN}✓ Wiped. No trace left on the machine.${RST}" ;;
+      y|Y|yes)
+        info "Removing $NVX_HOME (many small files — this can take a minute)..."
+        rm -rf "$NVX_HOME"; rm -f "$HOME/.local/bin/nvx"
+        echo "${GRN}✓ Wiped. No trace left on the machine.${RST}" ;;
       *) echo "Cancelled." ;;
     esac
     ;;
