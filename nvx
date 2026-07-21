@@ -114,7 +114,7 @@ case "$cmd" in
     ok() { echo "  ${GRN}✓${RST} $*"; }; bad() { echo "  ${RED}✗${RST} $*"; }
     echo "Sandbox: $NVX_HOME"
     for b in git curl unzip; do
-      command -v "$b" >/dev/null 2>&1 && ok "$b" || bad "$b (missing — install from host)"
+      if command -v "$b" >/dev/null 2>&1; then ok "$b"; else bad "$b (missing — install from host)"; fi
     done
     if command -v cc >/dev/null 2>&1 || command -v gcc >/dev/null 2>&1 || command -v clang >/dev/null 2>&1; then
       ok "C compiler ($(command -v cc gcc clang 2>/dev/null | head -1))"
@@ -122,7 +122,7 @@ case "$cmd" in
       bad "C compiler (missing — apt install build-essential / xcode-select --install)"
     fi
     for b in mise nvim node; do
-      command -v "$b" >/dev/null 2>&1 && ok "$b ($("$b" --version 2>&1 | head -1))" || bad "$b (not in sandbox)"
+      if command -v "$b" >/dev/null 2>&1; then ok "$b ($("$b" --version 2>&1 | head -1))"; else bad "$b (not in sandbox)"; fi
     done
     ;;
   uninstall)
