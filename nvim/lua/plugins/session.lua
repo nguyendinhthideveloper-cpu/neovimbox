@@ -22,6 +22,18 @@ return {
       -- "NvimTree_1" buffer (a known session-manager + file-explorer conflict).
       pre_save_cmds = { function() pcall(vim.cmd, "NvimTreeClose") end },
       bypass_save_filetypes = { "NvimTree", "alpha", "dashboard" },
+      -- Self-heal: wipe any phantom NvimTree buffers a previously-saved (bad)
+      -- session may recreate on restore, so old sessions clean themselves up.
+      post_restore_cmds = {
+        function()
+          for _, b in ipairs(vim.api.nvim_list_bufs()) do
+            local name = vim.api.nvim_buf_get_name(b)
+            if name:match("NvimTree_%d+$") or vim.bo[b].filetype == "NvimTree" then
+              pcall(vim.api.nvim_buf_delete, b, { force = true })
+            end
+          end
+        end,
+      },
     })
   end,
 }
