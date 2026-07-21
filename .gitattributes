@@ -1,0 +1,7 @@
+# Shell scripts MUST use LF: the shebang (`#!/usr/bin/env bash`) and every line
+# break if they pick up CRLF (when cloned on Windows with core.autocrlf).
+*.sh        text eol=lf
+nvx         text eol=lf
+install.sh  text eol=lf
+*.lua       text eol=lf
+Makefile    text eol=lf

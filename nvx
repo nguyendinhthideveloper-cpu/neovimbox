@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 thind
+# ============================================================================
+# nvx — drive a Neovim IDE packaged in ONE sandbox ($NVX_HOME, default ~/.nvx).
+# Everything (mise, Neovim, plugins, LSP, languages, tools) lives inside it by
+# pointing XDG_*/MISE_* at the sandbox — it never touches ~/.config, ~/.local/
+# share or your .bashrc. Wipe it all with `nvx uninstall` (delete one dir).
+#
+#   nvx                      open Neovim (inside the sandbox)
+#   nvx shell                open a shell with the sandbox env (nvim, go... sandboxed)
+#   nvx exec <cmd...>        run a command in the sandbox env (e.g. nvx exec java -version)
+#   nvx add <lang> [ver]     add a language: go|python|rust|jvm|node|cpp (runtime + LSP/format/lint/DAP)
+#   nvx add-tool <t@ver...>  add a CLI tool/version (e.g. java@25 maven@3.9.6 docker-cli)
+#   nvx rm <tool>            remove a runtime/tool
+#   nvx list                 list installed tools
+#   nvx update               upgrade tools + sync Neovim plugins
+#   nvx uninstall            WIPE the whole sandbox + the nvx command
+#   nvx home                 print the sandbox path
+#   nvx doctor               check prerequisites (cc/unzip/git) + sandbox tools
+#   nvx version              print mise / nvim / node versions
+# ============================================================================
+set -euo pipefail
+
+NVX_HOME="${NVX_HOME:-$HOME/.nvx}"
+NVX_VERSION="0.0.0" # x-release-please-version
+
+# --- Point all state at the sandbox (this is what makes "delete one dir" clean) ---
+export XDG_CONFIG_HOME="$NVX_HOME/config"
+export XDG_DATA_HOME="$NVX_HOME/data"
+export XDG_STATE_HOME="$NVX_HOME/state"
+export XDG_CACHE_HOME="$NVX_HOME/cache"
+export MISE_DATA_DIR="$NVX_HOME/mise"
+export MISE_CONFIG_DIR="$NVX_HOME/config/mise"
+export MISE_STATE_DIR="$NVX_HOME/state/mise"
+export MISE_CACHE_DIR="$NVX_HOME/cache/mise"
+export PATH="$NVX_HOME/bin:$NVX_HOME/mise/shims:$PATH"
+
+RED=$'\e[31m'; GRN=$'\e[32m'; RST=$'\e[0m'
+err()  { echo "${RED}✗ $*${RST}" >&2; }
+info() { echo "${GRN}▸ $*${RST}"; }
+
+# Install LSP/formatter/linter/DAP via mason (headless). '|| true' so one bad
+# tool doesn't sink the whole step; the specific error still shows in the log.
+mason() { nvim --headless "+MasonInstall $*" +qa || true; }
+
+# Install a WHOLE language: runtime (mise) + IDE tooling (mason). The tool list
+# tracks the Neovim config (lsp.lua/mason-tools/conform/lint/dap/neotest).
+lang_add() {
+  local lang="$1" ver="${2:-}"
+  case "$lang" in
+    go)
+      mise use -g "go@${ver:-latest}"; mise reshim
+      mason gopls gofumpt goimports golangci-lint delve ;;
+    python|py)
+      mise use -g "python@${ver:-latest}"; mise reshim   # python precompiled
+      mason pyright black isort ruff debugpy ;;
+    rust|rs)
+      mise use -g "rust@${ver:-stable}"; mise reshim
+      command -v cc >/dev/null 2>&1 || \
+        err "no 'cc' — cargo build/link will fail. Install a compiler from the host (apt install build-essential / xcode-select --install)."
+      rustup component add rustfmt clippy rust-src rust-analyzer; mise reshim
+      mason codelldb ;;
+    jvm|java)
+      mise use -g "java@${ver:-temurin-21}"
+      mise use -g "maven@${MAVEN_VERSION:-3.9.9}" "gradle@${GRADLE_VERSION:-8.10.2}"; mise reshim
+      local jdk_home jdk_major
+      jdk_home="$(mise where java)"
+      jdk_major="$(java -version 2>&1 | grep -oE '[0-9]+' | head -1)"
+      mkdir -p "$HOME/.m2"
+      cat > "$HOME/.m2/toolchains.xml" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<toolchains>
+  <toolchain>
+    <type>jdk</type>
+    <provides><version>${jdk_major}</version><vendor>temurin</vendor></provides>
+    <configuration><jdkHome>${jdk_home}</jdkHome></configuration>
+  </toolchain>
+</toolchains>
+EOF
+      mason jdtls java-debug-adapter java-test google-java-format ;;
+    node)
+      mise use -g "node@${ver:-latest}"; mise reshim ;;
+    cpp|c|c++)
+      # LSP/format/DAP via mason; the COMPILER (clang/gcc) comes from the host.
+      command -v cc >/dev/null 2>&1 || command -v clang >/dev/null 2>&1 || \
+        err "no C/C++ compiler — install from the host (apt install build-essential clang / xcode-select --install)."
+      mason clangd clang-format codelldb ;;
+    *) err "nvx add: unsupported '$lang' (go|python|rust|jvm|node|cpp)"; return 1 ;;
+  esac
+  info "installed $lang${ver:+@$ver}"
+}
+
+[ -d "$NVX_HOME" ] || { err "Sandbox not installed ($NVX_HOME). Run ./install.sh first."; exit 1; }
+
+cmd="${1:-nvim}"; shift || true
+case "$cmd" in
+  nvim|edit)   exec nvim "$@" ;;
+  shell)       info "Sandbox shell ($NVX_HOME) — type 'exit' to leave."; exec "${SHELL:-bash}" ;;
+  exec)        [ "$#" -ge 1 ] || { err "nvx exec <cmd...>"; exit 1; }; exec "$@" ;;
+  add)         [ "$#" -ge 1 ] || { err "nvx add <go|python|rust|jvm|node|cpp> [ver]"; exit 1; }; lang_add "$@" ;;
+  add-tool)    [ "$#" -ge 1 ] || { err "nvx add-tool <tool[@ver]...>"; exit 1; }; info "Adding: $*"; mise use -g "$@" && mise reshim ;;
+  rm|remove)   [ "$#" -ge 1 ] || { err "nvx rm <tool[@ver]>"; exit 1; }; mise uninstall "$@" && mise reshim ;;
+  list|ls)     mise ls ;;
+  update)      info "Upgrading tools..."; mise upgrade || true; info "Syncing plugins..."; nvim --headless "+Lazy! sync" +qa || true; info "Done." ;;
+  home)        echo "$NVX_HOME" ;;
+  version|--version|-v)
+    echo "nvx (neovimbox) $NVX_VERSION · sandbox: $NVX_HOME"
+    echo "  mise: $(mise --version 2>&1 | head -1)"
+    echo "  nvim: $(nvim --version 2>&1 | head -1)"
+    echo "  node: $(node --version 2>&1 | head -1)"
+    ;;
+  doctor)
+    ok() { echo "  ${GRN}✓${RST} $*"; }; bad() { echo "  ${RED}✗${RST} $*"; }
+    echo "Sandbox: $NVX_HOME"
+    for b in git curl unzip; do
+      command -v "$b" >/dev/null 2>&1 && ok "$b" || bad "$b (missing — install from host)"
+    done
+    if command -v cc >/dev/null 2>&1 || command -v gcc >/dev/null 2>&1 || command -v clang >/dev/null 2>&1; then
+      ok "C compiler ($(command -v cc gcc clang 2>/dev/null | head -1))"
+    else
+      bad "C compiler (missing — apt install build-essential / xcode-select --install)"
+    fi
+    for b in mise nvim node; do
+      command -v "$b" >/dev/null 2>&1 && ok "$b ($("$b" --version 2>&1 | head -1))" || bad "$b (not in sandbox)"
+    done
+    ;;
+  uninstall)
+    read -r -p "WIPE $NVX_HOME + the nvx command? [y/N] " a 2>/dev/null || a=""
+    case "$a" in
+      y|Y|yes) rm -rf "$NVX_HOME"; rm -f "$HOME/.local/bin/nvx"; echo "${GRN}✓ Wiped. No trace left on the machine.${RST}" ;;
+      *) echo "Cancelled." ;;
+    esac
+    ;;
+  help|-h|--help) sed -n '10,21p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) err "Unknown command: $cmd"; sed -n '10,21p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac

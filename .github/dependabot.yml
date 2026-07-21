@@ -1,0 +1,12 @@
+version: 2
+updates:
+  # Auto-PR updates for GitHub Actions (avoids Node deprecation warnings... automatically).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci"

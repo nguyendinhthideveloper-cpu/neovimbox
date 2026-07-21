@@ -1,0 +1,57 @@
+name: ci
+
+# Lint the scripts/Lua + smoke-test the native install (install.sh -> nvx) on a clean Ubuntu.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch: {}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck (install.sh + nvx)
+        run: shellcheck install.sh nvx
+      - name: stylua (nvim/ — check formatting)
+        uses: JohnnyMorganz/stylua-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          version: latest
+          args: --check nvim/
+      - name: luacheck (nvim/ — static lint)
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends luarocks
+          sudo luarocks install luacheck
+          luacheck nvim/
+
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # install.sh prerequisites (C compiler + unzip); git/curl ship on the runner.
+      - name: Prerequisites
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential unzip
+      - name: Install sandbox (install.sh)
+        run: ./install.sh
+      - name: Add ~/.local/bin to PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Smoke — nvx opens nvim, adds a language + tool
+        run: |
+          set -euo pipefail
+          nvx version
+          nvx doctor
+          nvx exec nvim --version | head -1
+          nvx add go
+          nvx exec go version
+          nvx add-tool yq
+          nvx exec yq --version
+          nvx list
+          echo "✓ nvx sandbox OK"
+      - name: Sandbox stays inside ~/.nvx (no scatter onto host)
+        run: |
+          test ! -e "$HOME/.config/nvim"        || { echo "leaked ~/.config/nvim"; exit 1; }
+          test ! -e "$HOME/.local/share/nvim"   || { echo "leaked ~/.local/share/nvim"; exit 1; }
+          echo "✓ host clean — everything under ~/.nvx"

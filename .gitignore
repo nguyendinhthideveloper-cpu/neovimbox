@@ -1,0 +1,13 @@
+# OS / editor
+.DS_Store
+*.swp
+*.swo
+
+# Logs / temp
+*.log
+tmp/
+.cache/
+
+# Local Neovim state (in case it gets generated in-repo)
+nvim/.netrwhist
+nvim/plugin/packer_compiled.lua
