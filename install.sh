@@ -97,37 +97,57 @@ install_font() {
   if command -v fc-list >/dev/null 2>&1 && fc-list 2>/dev/null | grep -qi "JetBrainsMono Nerd Font"; then
     info "JetBrainsMono Nerd Font already installed."; return 0
   fi
+  command -v unzip >/dev/null 2>&1 || { warn "Font install needs 'unzip' — skipping."; return 0; }
   local url="https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip"
   local tmp; tmp="$(mktemp -d)"
-  info "Installing JetBrainsMono Nerd Font (host font — delete the .ttf files to undo)..."
-  if ! curl -fsSL "$url" -o "$tmp/font.zip"; then
-    warn "Font download failed — icons need a Nerd Font; install one manually."; rm -rf "$tmp"; return 0
+  info "Downloading JetBrainsMono Nerd Font..."
+  if ! curl -fL "$url" -o "$tmp/font.zip"; then
+    warn "Font download failed — install a Nerd Font manually for icons."; rm -rf "$tmp"; return 0
   fi
   unzip -qo "$tmp/font.zip" -d "$tmp/f" >/dev/null 2>&1 || { warn "Font unzip failed."; rm -rf "$tmp"; return 0; }
+  # collect .ttf files regardless of the archive's internal layout
+  local ttfs; ttfs="$(find "$tmp/f" -type f -iname '*.ttf' 2>/dev/null)"
+  [ -n "$ttfs" ] || { warn "No .ttf files in the font archive — skipping."; rm -rf "$tmp"; return 0; }
 
   if grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null; then
-    # WSL -> install into the Windows per-user font store + register (no admin)
-    local lad wdir; lad="$(cmd.exe /c 'echo %LOCALAPPDATA%' 2>/dev/null | tr -d '\r')"
-    if [ -n "$lad" ]; then
-      wdir="$(wslpath "$lad" 2>/dev/null)/Microsoft/Windows/Fonts"; mkdir -p "$wdir"
-      local n=0 base
-      for f in "$tmp"/f/*.ttf; do
-        [ -e "$f" ] || continue; base="$(basename "$f")"
+    # WSL -> install into the Windows per-user font store + register (no admin needed)
+    local lad wdir n=0 base
+    lad="$(cmd.exe /c 'echo %LOCALAPPDATA%' 2>/dev/null | tr -d '\r\n')"
+    if [ -n "$lad" ] && command -v wslpath >/dev/null 2>&1; then
+      wdir="$(wslpath "$lad" 2>/dev/null)/Microsoft/Windows/Fonts"; mkdir -p "$wdir" 2>/dev/null || true
+      while IFS= read -r f; do
+        [ -n "$f" ] || continue; base="$(basename "$f")"
         cp -f "$f" "$wdir/" 2>/dev/null || continue
         reg.exe add 'HKCU\Software\Microsoft\Windows NT\CurrentVersion\Fonts' \
-          /v "${base%.ttf} (TrueType)" /t REG_SZ /d "$lad\\Microsoft\\Windows\\Fonts\\$base" /f >/dev/null 2>&1 || true
+          /v "${base%.*} (TrueType)" /t REG_SZ /d "$lad\\Microsoft\\Windows\\Fonts\\$base" /f >/dev/null 2>&1 || true
         n=$((n + 1))
-      done
-      info "Installed $n font file(s) to Windows."
-      warn "WSL: set the terminal font manually — Windows Terminal → Settings → your profile → Appearance → Font face → 'JetBrainsMono Nerd Font'."
+      done <<EOF
+$ttfs
+EOF
+    fi
+    if [ "$n" -gt 0 ]; then
+      info "Installed $n font file(s) into Windows (per-user)."
+      warn "WSL: set the terminal font — Windows Terminal → Settings → your profile → Appearance → Font face → 'JetBrainsMono Nerd Font' (restart the terminal first)."
     else
-      warn "Couldn't find the Windows user folder — install the font manually on Windows."
+      # interop/registry unavailable — stage the fonts so the user installs them
+      local stage="$NVX_HOME/fonts"; mkdir -p "$stage"
+      while IFS= read -r f; do [ -n "$f" ] && cp -f "$f" "$stage/" 2>/dev/null; done <<EOF
+$ttfs
+EOF
+      warn "Couldn't auto-install the font into Windows. The .ttf files are here: $stage"
+      warn "Install them: run  explorer.exe \"\$(wslpath -w '$stage')\"  then select all → right-click → Install."
     fi
   elif [ "$os" = "Darwin" ]; then
-    mkdir -p "$HOME/Library/Fonts"; cp -f "$tmp"/f/*.ttf "$HOME/Library/Fonts/" 2>/dev/null || true
+    mkdir -p "$HOME/Library/Fonts"
+    while IFS= read -r f; do [ -n "$f" ] && cp -f "$f" "$HOME/Library/Fonts/" 2>/dev/null; done <<EOF
+$ttfs
+EOF
     info "Installed to ~/Library/Fonts — select 'JetBrainsMono Nerd Font' in your terminal."
   else
-    mkdir -p "$HOME/.local/share/fonts"; cp -f "$tmp"/f/*.ttf "$HOME/.local/share/fonts/" 2>/dev/null || true
+    mkdir -p "$HOME/.local/share/fonts"
+    while IFS= read -r f; do [ -n "$f" ] && cp -f "$f" "$HOME/.local/share/fonts/" 2>/dev/null; done <<EOF
+$ttfs
+EOF
     command -v fc-cache >/dev/null 2>&1 && fc-cache -f "$HOME/.local/share/fonts" >/dev/null 2>&1 || true
     info "Installed to ~/.local/share/fonts — select 'JetBrainsMono Nerd Font' in your terminal."
   fi
