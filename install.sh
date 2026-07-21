@@ -110,32 +110,40 @@ install_font() {
   [ -n "$ttfs" ] || { warn "No .ttf files in the font archive — skipping."; rm -rf "$tmp"; return 0; }
 
   if grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null; then
-    # WSL -> install into the Windows per-user font store + register (no admin needed)
-    local lad wdir n=0 base
-    lad="$(cmd.exe /c 'echo %LOCALAPPDATA%' 2>/dev/null | tr -d '\r\n')"
-    if [ -n "$lad" ] && command -v wslpath >/dev/null 2>&1; then
-      wdir="$(wslpath "$lad" 2>/dev/null)/Microsoft/Windows/Fonts"; mkdir -p "$wdir" 2>/dev/null || true
-      while IFS= read -r f; do
-        [ -n "$f" ] || continue; base="$(basename "$f")"
-        cp -f "$f" "$wdir/" 2>/dev/null || continue
-        reg.exe add 'HKCU\Software\Microsoft\Windows NT\CurrentVersion\Fonts' \
-          /v "${base%.*} (TrueType)" /t REG_SZ /d "$lad\\Microsoft\\Windows\\Fonts\\$base" /f >/dev/null 2>&1 || true
-        n=$((n + 1))
-      done <<EOF
-$ttfs
-EOF
+    # WSL -> install per-user on Windows via PowerShell. We read %LOCALAPPDATA%
+    # INSIDE PowerShell (not via cmd.exe, whose UNC-cwd warning corrupts it) and
+    # register in HKCU, so no admin is needed and no manual step to copy files.
+    local n=0
+    if command -v powershell.exe >/dev/null 2>&1 && command -v wslpath >/dev/null 2>&1; then
+      cat > "$tmp/inst.ps1" <<'PS'
+param([string]$Src)
+$dst = Join-Path $env:LOCALAPPDATA "Microsoft\Windows\Fonts"
+$reg = "HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts"
+New-Item -ItemType Directory -Force -Path $dst | Out-Null
+$n = 0
+Get-ChildItem -Path $Src -Recurse -Filter *.ttf | ForEach-Object {
+  $t = Join-Path $dst $_.Name
+  Copy-Item $_.FullName $t -Force
+  New-ItemProperty -Path $reg -Name ($_.BaseName + " (TrueType)") -Value $t -PropertyType String -Force | Out-Null
+  $n++
+}
+Write-Output ("NVXFONTS=" + $n)
+PS
+      local out
+      out="$(powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w "$tmp/inst.ps1")" -Src "$(wslpath -w "$tmp/f")" 2>/dev/null | tr -d '\r')"
+      n="$(printf '%s\n' "$out" | sed -n 's/^NVXFONTS=//p')"; n="${n//[^0-9]/}"; [ -n "$n" ] || n=0
     fi
     if [ "$n" -gt 0 ]; then
       info "Installed $n font file(s) into Windows (per-user)."
-      warn "WSL: set the terminal font — Windows Terminal → Settings → your profile → Appearance → Font face → 'JetBrainsMono Nerd Font' (restart the terminal first)."
+      warn "WSL: restart Windows Terminal, then set Font face to 'JetBrainsMono Nerd Font' (Settings → your profile → Appearance)."
     else
-      # interop/registry unavailable — stage the fonts so the user installs them
+      # interop unavailable — stage the fonts so the user can install them
       local stage="$NVX_HOME/fonts"; mkdir -p "$stage"
       while IFS= read -r f; do [ -n "$f" ] && cp -f "$f" "$stage/" 2>/dev/null; done <<EOF
 $ttfs
 EOF
-      warn "Couldn't auto-install the font into Windows. The .ttf files are here: $stage"
-      warn "Install them: run  explorer.exe \"\$(wslpath -w '$stage')\"  then select all → right-click → Install."
+      warn "Windows interop unavailable — fonts staged at: $stage"
+      warn "Install them: explorer.exe \"\$(wslpath -w '$stage')\"  → select all → right-click → Install."
     fi
   elif [ "$os" = "Darwin" ]; then
     mkdir -p "$HOME/Library/Fonts"
