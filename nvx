@@ -15,6 +15,7 @@
 #   nvx rm <tool>            remove a runtime/tool
 #   nvx list                 list installed tools
 #   nvx update               upgrade tools + sync Neovim plugins
+#   nvx self-update          re-fetch nvx + Neovim config from GitHub into the sandbox
 #   nvx uninstall            WIPE the whole sandbox + the nvx command
 #   nvx home                 print the sandbox path
 #   nvx doctor               check prerequisites (cc/unzip/git) + sandbox tools
@@ -24,6 +25,7 @@ set -euo pipefail
 
 NVX_HOME="${NVX_HOME:-$HOME/.nvx}"
 NVX_VERSION="0.0.0" # x-release-please-version
+NVX_REPO="${NVX_REPO:-https://github.com/nguyendinhthideveloper-cpu/neovimbox}"
 
 # --- Point all state at the sandbox (this is what makes "delete one dir" clean) ---
 export XDG_CONFIG_HOME="$NVX_HOME/config"
@@ -103,6 +105,22 @@ case "$cmd" in
   rm|remove)   [ "$#" -ge 1 ] || { err "nvx rm <tool[@ver]>"; exit 1; }; mise uninstall "$@" && mise reshim ;;
   list|ls)     mise ls ;;
   update)      info "Upgrading tools..."; mise upgrade || true; info "Syncing plugins..."; nvim --headless "+Lazy! sync" +qa || true; info "Done." ;;
+  self-update|selfupdate)
+    command -v git >/dev/null 2>&1 || { err "self-update needs git on the host"; exit 1; }
+    src="$NVX_HOME/src"
+    info "Fetching latest neovimbox ($NVX_REPO)..."
+    rm -rf "$src"
+    git clone --depth 1 "$NVX_REPO" "$src" || { err "clone failed"; exit 1; }
+    info "Updating Neovim config..."
+    rm -rf "$NVX_HOME/config/nvim"; cp -r "$src/nvim" "$NVX_HOME/config/nvim"
+    info "Updating the nvx command..."
+    cp "$src/nvx" "$NVX_HOME/bin/.nvx.new"; chmod +x "$NVX_HOME/bin/.nvx.new"
+    mv "$NVX_HOME/bin/.nvx.new" "$NVX_HOME/bin/nvx"  # atomic: safe to replace the running script
+    rm -rf "$src"
+    info "Syncing Neovim plugins (pinned to the repo lockfile)..."
+    nvim --headless "+Lazy! install" +qa || true
+    nvim --headless "+Lazy! restore" +qa || true
+    info "Updated. Re-run nvx to use the new command." ;;
   home)        echo "$NVX_HOME" ;;
   version|--version|-v)
     echo "nvx (neovimbox) $NVX_VERSION · sandbox: $NVX_HOME"
@@ -148,10 +166,10 @@ case "$cmd" in
       *) echo "Cancelled." ;;
     esac
     ;;
-  help|-h|--help) sed -n '10,21p' "$0" | sed 's/^# \{0,1\}//' ;;
+  help|-h|--help) sed -n '10,22p' "$0" | sed 's/^# \{0,1\}//' ;;
   -*|+*)  # nvim flags/Ex commands pass straight through (e.g. `nvx +qa`, `nvx -R file`)
     exec nvim "$cmd" "$@" ;;
   *)  # a path (file or dir, e.g. `nvx .` or `nvx ~/proj`) opens in Neovim
     [ -e "$cmd" ] && exec nvim "$cmd" "$@"
-    err "Unknown command: $cmd"; sed -n '10,21p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+    err "Unknown command: $cmd"; sed -n '10,22p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

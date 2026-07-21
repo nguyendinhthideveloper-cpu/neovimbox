@@ -48,6 +48,7 @@ for treesitter, clangd, and cgo/rust. `install.sh` warns if any are missing;
 | `nvx exec <cmd...>` | run a command in the sandbox env (e.g. `nvx exec go version`) |
 | `nvx shell` | open a shell with the sandbox env |
 | `nvx rm / list / update` | remove a tool / list installed / upgrade |
+| `nvx self-update` | pull the latest `nvx` + Neovim config from GitHub into the sandbox |
 | `nvx doctor / version / home` | check prerequisites / print versions / print the sandbox path |
 | `nvx uninstall` | remove the sandbox and the `nvx` command |
 
