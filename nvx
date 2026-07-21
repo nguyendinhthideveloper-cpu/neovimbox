@@ -24,7 +24,7 @@
 set -euo pipefail
 
 NVX_HOME="${NVX_HOME:-$HOME/.nvx}"
-NVX_VERSION="0.0.0" # x-release-please-version
+NVX_VERSION="1.0.0" # x-release-please-version
 NVX_REPO="${NVX_REPO:-https://github.com/nguyendinhthideveloper-cpu/neovimbox}"
 
 # --- Point all state at the sandbox (this is what makes "delete one dir" clean) ---
