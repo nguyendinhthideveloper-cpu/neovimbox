@@ -18,6 +18,10 @@ return {
       auto_session_suppress_dirs = { "~/", "/", "/tmp" },
       auto_restore_enabled = true,
       auto_save_enabled = true,
+      -- Close nvim-tree before saving, else it's restored as a broken empty
+      -- "NvimTree_1" buffer (a known session-manager + file-explorer conflict).
+      pre_save_cmds = { function() pcall(vim.cmd, "NvimTreeClose") end },
+      bypass_save_filetypes = { "NvimTree", "alpha", "dashboard" },
     })
   end,
 }
