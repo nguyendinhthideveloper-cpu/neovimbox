@@ -26,10 +26,15 @@ return {
     })
   end,
   config = function()
+    local nf = vim.g.have_nerd_font
     require("nvim-tree").setup({
       hijack_directories = { enable = false }, -- our VimEnter autocmd builds the layout
       view = { width = 32 },
-      renderer = { group_empty = true },
+      renderer = {
+        group_empty = true,
+        -- hide glyph icons when there's no Nerd Font, so the tree stays readable
+        icons = { show = { file = nf, folder = nf, folder_arrow = nf, git = nf } },
+      },
       filters = { dotfiles = false },
       git = { enable = true },
     })

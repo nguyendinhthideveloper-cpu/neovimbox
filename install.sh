@@ -85,6 +85,56 @@ info "Config + command are now inside $NVX_HOME"
 ln -sf "$NVX_HOME/bin/nvx" "$HOST_BIN/nvx"
 info "Command 'nvx' -> $HOST_BIN/nvx (the only trace on your machine)"
 
+# 6.5) Nerd Font on the host so icons render (opt out with NVX_NO_FONT=1) -----
+# This is the ONE thing that touches the host outside $NVX_HOME + the symlink;
+# it is best-effort and never fails the install. Remove the copied .ttf files to
+# undo. On WSL the font is installed into Windows; you still pick it in Windows
+# Terminal manually.
+install_font() {
+  [ "${NVX_NO_FONT:-0}" = "1" ] && { info "Skipping Nerd Font install (NVX_NO_FONT=1)."; return 0; }
+  local os; os="$(uname -s 2>/dev/null || echo unknown)"
+  # already installed? (Linux/macOS check via fontconfig)
+  if command -v fc-list >/dev/null 2>&1 && fc-list 2>/dev/null | grep -qi "JetBrainsMono Nerd Font"; then
+    info "JetBrainsMono Nerd Font already installed."; return 0
+  fi
+  local url="https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip"
+  local tmp; tmp="$(mktemp -d)"
+  info "Installing JetBrainsMono Nerd Font (host font — delete the .ttf files to undo)..."
+  if ! curl -fsSL "$url" -o "$tmp/font.zip"; then
+    warn "Font download failed — icons need a Nerd Font; install one manually."; rm -rf "$tmp"; return 0
+  fi
+  unzip -qo "$tmp/font.zip" -d "$tmp/f" >/dev/null 2>&1 || { warn "Font unzip failed."; rm -rf "$tmp"; return 0; }
+
+  if grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null; then
+    # WSL -> install into the Windows per-user font store + register (no admin)
+    local lad wdir; lad="$(cmd.exe /c 'echo %LOCALAPPDATA%' 2>/dev/null | tr -d '\r')"
+    if [ -n "$lad" ]; then
+      wdir="$(wslpath "$lad" 2>/dev/null)/Microsoft/Windows/Fonts"; mkdir -p "$wdir"
+      local n=0 base
+      for f in "$tmp"/f/*.ttf; do
+        [ -e "$f" ] || continue; base="$(basename "$f")"
+        cp -f "$f" "$wdir/" 2>/dev/null || continue
+        reg.exe add 'HKCU\Software\Microsoft\Windows NT\CurrentVersion\Fonts' \
+          /v "${base%.ttf} (TrueType)" /t REG_SZ /d "$lad\\Microsoft\\Windows\\Fonts\\$base" /f >/dev/null 2>&1 || true
+        n=$((n + 1))
+      done
+      info "Installed $n font file(s) to Windows."
+      warn "WSL: set the terminal font manually — Windows Terminal → Settings → your profile → Appearance → Font face → 'JetBrainsMono Nerd Font'."
+    else
+      warn "Couldn't find the Windows user folder — install the font manually on Windows."
+    fi
+  elif [ "$os" = "Darwin" ]; then
+    mkdir -p "$HOME/Library/Fonts"; cp -f "$tmp"/f/*.ttf "$HOME/Library/Fonts/" 2>/dev/null || true
+    info "Installed to ~/Library/Fonts — select 'JetBrainsMono Nerd Font' in your terminal."
+  else
+    mkdir -p "$HOME/.local/share/fonts"; cp -f "$tmp"/f/*.ttf "$HOME/.local/share/fonts/" 2>/dev/null || true
+    command -v fc-cache >/dev/null 2>&1 && fc-cache -f "$HOME/.local/share/fonts" >/dev/null 2>&1 || true
+    info "Installed to ~/.local/share/fonts — select 'JetBrainsMono Nerd Font' in your terminal."
+  fi
+  rm -rf "$tmp"
+}
+install_font || warn "Font install skipped (error) — icons need a Nerd Font."
+
 # 7) Pre-install plugins + core LSP (treesitter parsers built via Lazy) ------
 info "Loading Neovim plugins + core LSP (one-time, takes a moment)..."
 nvim --headless "+Lazy! install" +qa || true
@@ -93,5 +143,6 @@ nvim --headless "+MasonInstall lua-language-server stylua" +qa || true
 
 info "Done! Sandbox: $NVX_HOME"
 info "Use: 'nvx' (open Neovim) · 'nvx add go' · 'nvx add-tool java@25 maven@3.9.6'"
+info "For icons, set your terminal font to 'JetBrainsMono Nerd Font' (installed above)."
 info "Wipe everything: 'nvx uninstall'"
 command -v nvx >/dev/null 2>&1 || warn "Add $HOST_BIN to PATH to call 'nvx' (or run $HOST_BIN/nvx)."

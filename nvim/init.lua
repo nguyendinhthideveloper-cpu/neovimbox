@@ -9,6 +9,10 @@ vim.g.maplocalleader = " "
 vim.g.loaded_netrw = 1
 vim.g.loaded_netrwPlugin = 1
 
+-- Icons need a Nerd Font (install.sh installs JetBrainsMono). On by default;
+-- set NVX_NERD_FONT=0 to fall back to plain text if you have no Nerd Font.
+vim.g.have_nerd_font = os.getenv("NVX_NERD_FONT") ~= "0"
+
 require("config.options")
 require("config.keymaps")
 

@@ -84,10 +84,11 @@ formatting, linting, and debugging turn on per language automatically. Plugins a
 pinned in [`nvim/lazy-lock.json`](nvim/lazy-lock.json); use `:Lazy` / `:Mason` to
 manage them.
 
-Icons (file tree, statusline, tabs) need a [Nerd Font](https://www.nerdfonts.com)
-selected in your terminal — without one they show as `◆`/`□` placeholders. On WSL,
-install the font on Windows and pick it in Windows Terminal → Settings → your
-profile → Appearance → Font face.
+Icons need a [Nerd Font](https://www.nerdfonts.com); `install.sh` installs
+JetBrainsMono Nerd Font for you (skip with `NVX_NO_FONT=1`). You still have to
+select it in your terminal — on WSL: Windows Terminal → Settings → your profile →
+Appearance → Font face → `JetBrainsMono Nerd Font`. No Nerd Font? Run with
+`NVX_NERD_FONT=0` for a plain-text fallback instead of `◆`/`□` placeholders.
 
 ## Repo
 
