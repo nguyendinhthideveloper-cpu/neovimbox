@@ -29,6 +29,10 @@ jobs:
 
   smoke:
     runs-on: ubuntu-latest
+    # mise fetches Neovim/tools from GitHub releases; anonymous API calls hit rate
+    # limits (HTTP 403). A token authenticates them (esp. on the shared macOS IPs).
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       # install.sh prerequisites (C compiler + unzip); git/curl ship on the runner.
@@ -58,6 +62,8 @@ jobs:
 
   smoke-macos:
     runs-on: macos-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       # macOS runners ship clang (Xcode CLT), git, curl, unzip — no extra prereqs.
