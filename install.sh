@@ -97,54 +97,42 @@ install_font() {
   if command -v fc-list >/dev/null 2>&1 && fc-list 2>/dev/null | grep -qi "JetBrainsMono Nerd Font"; then
     info "JetBrainsMono Nerd Font already installed."; return 0
   fi
-  command -v unzip >/dev/null 2>&1 || { warn "Font install needs 'unzip' — skipping."; return 0; }
   local url="https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip"
   local tmp; tmp="$(mktemp -d)"
   info "Downloading JetBrainsMono Nerd Font..."
   if ! curl -fL "$url" -o "$tmp/font.zip"; then
     warn "Font download failed — install a Nerd Font manually for icons."; rm -rf "$tmp"; return 0
   fi
-  unzip -qo "$tmp/font.zip" -d "$tmp/f" >/dev/null 2>&1 || { warn "Font unzip failed."; rm -rf "$tmp"; return 0; }
-  # collect .ttf files regardless of the archive's internal layout
-  local ttfs; ttfs="$(find "$tmp/f" -type f -iname '*.ttf' 2>/dev/null)"
-  [ -n "$ttfs" ] || { warn "No .ttf files in the font archive — skipping."; rm -rf "$tmp"; return 0; }
 
-  if grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null; then
-    # WSL -> install per-user on Windows via PowerShell. We read %LOCALAPPDATA%
-    # INSIDE PowerShell (not via cmd.exe, whose UNC-cwd warning corrupts it) and
-    # register in HKCU, so no admin is needed and no manual step to copy files.
-    local n=0
-    if command -v powershell.exe >/dev/null 2>&1 && command -v wslpath >/dev/null 2>&1; then
-      cat > "$tmp/inst.ps1" <<'PS'
-param([string]$Src)
+  if grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null \
+     && command -v powershell.exe >/dev/null 2>&1 && command -v wslpath >/dev/null 2>&1; then
+    # WSL: do it all in PowerShell — unzip (Expand-Archive, so no `unzip` needed),
+    # install the font per-user (HKCU, no admin), and point Windows Terminal at it.
+    # %LOCALAPPDATA% is read inside PowerShell to dodge the cmd.exe UNC-cwd warning.
+    cat > "$tmp/nvxfont.ps1" <<'PS'
+param([string]$Zip)
+$work = Join-Path $env:TEMP ("nvxfont_" + [System.Guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Force -Path $work | Out-Null
+Expand-Archive -Path $Zip -DestinationPath $work -Force
 $dst = Join-Path $env:LOCALAPPDATA "Microsoft\Windows\Fonts"
 $reg = "HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts"
 New-Item -ItemType Directory -Force -Path $dst | Out-Null
 $n = 0
-Get-ChildItem -Path $Src -Recurse -Filter *.ttf | ForEach-Object {
+Get-ChildItem -Path $work -Recurse -Filter *.ttf | ForEach-Object {
   $t = Join-Path $dst $_.Name
   Copy-Item $_.FullName $t -Force
   New-ItemProperty -Path $reg -Name ($_.BaseName + " (TrueType)") -Value $t -PropertyType String -Force | Out-Null
   $n++
 }
+Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
 Write-Output ("NVXFONTS=" + $n)
-PS
-      local out
-      out="$(powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w "$tmp/inst.ps1")" -Src "$(wslpath -w "$tmp/f")" 2>/dev/null | tr -d '\r')"
-      n="$(printf '%s\n' "$out" | sed -n 's/^NVXFONTS=//p')"; n="${n//[^0-9]/}"; [ -n "$n" ] || n=0
-    fi
-    if [ "$n" -gt 0 ]; then
-      info "Installed $n font file(s) into Windows (per-user)."
-      # Auto-select the font in Windows Terminal so it just works. Backs up
-      # settings.json to .nvxbak first; strips // comments; skips on any error.
-      cat > "$tmp/wtfont.ps1" <<'PS'
-$Face = "JetBrainsMono Nerd Font"
+# Point Windows Terminal at the font (backup settings.json to .nvxbak; skip on error)
 $paths = @(
   (Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json'),
   (Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe\LocalState\settings.json'),
   (Join-Path $env:LOCALAPPDATA 'Microsoft\Windows Terminal\settings.json')
 )
-$done = 0
+$wt = 0
 foreach ($p in $paths) {
   if (-not (Test-Path $p)) { continue }
   try {
@@ -154,45 +142,45 @@ foreach ($p in $paths) {
     if (-not $j.profiles) { $j | Add-Member -NotePropertyName profiles -NotePropertyValue ([pscustomobject]@{}) -Force }
     if (-not $j.profiles.defaults) { $j.profiles | Add-Member -NotePropertyName defaults -NotePropertyValue ([pscustomobject]@{}) -Force }
     if (-not $j.profiles.defaults.font) { $j.profiles.defaults | Add-Member -NotePropertyName font -NotePropertyValue ([pscustomobject]@{}) -Force }
-    $j.profiles.defaults.font | Add-Member -NotePropertyName face -NotePropertyValue $Face -Force
+    $j.profiles.defaults.font | Add-Member -NotePropertyName face -NotePropertyValue "JetBrainsMono Nerd Font" -Force
     Copy-Item $p "$p.nvxbak" -Force
     ($j | ConvertTo-Json -Depth 32) | Set-Content -Path $p -Encoding UTF8
-    $done++
+    $wt++
   } catch { }
 }
-Write-Output ("NVXWT=" + $done)
+Write-Output ("NVXWT=" + $wt)
 PS
-      local wt
-      wt="$(powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w "$tmp/wtfont.ps1")" 2>/dev/null | tr -d '\r' | sed -n 's/^NVXWT=//p')"
-      wt="${wt//[^0-9]/}"; [ -n "$wt" ] || wt=0
+    local out n wt
+    out="$(powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w "$tmp/nvxfont.ps1")" -Zip "$(wslpath -w "$tmp/font.zip")" 2>/dev/null | tr -d '\r')"
+    n="$(printf '%s\n' "$out" | sed -n 's/^NVXFONTS=//p')"; n="${n//[^0-9]/}"; [ -n "$n" ] || n=0
+    wt="$(printf '%s\n' "$out" | sed -n 's/^NVXWT=//p')"; wt="${wt//[^0-9]/}"; [ -n "$wt" ] || wt=0
+    if [ "$n" -gt 0 ]; then
+      info "Installed $n font file(s) into Windows (per-user)."
       if [ "$wt" -gt 0 ]; then
         info "Set Windows Terminal font automatically (backup: settings.json.nvxbak). Restart the terminal to apply."
       else
-        warn "Font installed, but couldn't auto-set the terminal font — set it once: Windows Terminal → Settings → your profile → Appearance → Font face → 'JetBrainsMono Nerd Font'."
+        warn "Font installed; set the terminal font once: Windows Terminal → Settings → your profile → Appearance → Font face → 'JetBrainsMono Nerd Font'."
       fi
     else
-      # interop unavailable — stage the fonts so the user can install them
-      local stage="$NVX_HOME/fonts"; mkdir -p "$stage"
-      while IFS= read -r f; do [ -n "$f" ] && cp -f "$f" "$stage/" 2>/dev/null; done <<EOF
-$ttfs
-EOF
-      warn "Windows interop unavailable — fonts staged at: $stage"
-      warn "Install them: explorer.exe \"\$(wslpath -w '$stage')\"  → select all → right-click → Install."
+      warn "Font install produced no files — install a Nerd Font manually."
     fi
-  elif [ "$os" = "Darwin" ]; then
-    mkdir -p "$HOME/Library/Fonts"
-    while IFS= read -r f; do [ -n "$f" ] && cp -f "$f" "$HOME/Library/Fonts/" 2>/dev/null; done <<EOF
-$ttfs
-EOF
-    info "Installed to ~/Library/Fonts — select 'JetBrainsMono Nerd Font' in your terminal."
-  else
-    mkdir -p "$HOME/.local/share/fonts"
-    while IFS= read -r f; do [ -n "$f" ] && cp -f "$f" "$HOME/.local/share/fonts/" 2>/dev/null; done <<EOF
-$ttfs
-EOF
-    command -v fc-cache >/dev/null 2>&1 && fc-cache -f "$HOME/.local/share/fonts" >/dev/null 2>&1 || true
-    info "Installed to ~/.local/share/fonts — select 'JetBrainsMono Nerd Font' in your terminal."
+    rm -rf "$tmp"; return 0
   fi
+
+  # Native Linux / macOS: extract with unzip and drop into the user font dir.
+  if ! command -v unzip >/dev/null 2>&1; then
+    warn "Font install needs 'unzip' — install it and re-run for icons."; rm -rf "$tmp"; return 0
+  fi
+  unzip -qo "$tmp/font.zip" -d "$tmp/f" >/dev/null 2>&1 || { warn "Font unzip failed."; rm -rf "$tmp"; return 0; }
+  local ttfs; ttfs="$(find "$tmp/f" -type f -iname '*.ttf' 2>/dev/null)"
+  [ -n "$ttfs" ] || { warn "No .ttf files in the font archive — skipping."; rm -rf "$tmp"; return 0; }
+  local fdir="$HOME/.local/share/fonts"; [ "$os" = "Darwin" ] && fdir="$HOME/Library/Fonts"
+  mkdir -p "$fdir"
+  while IFS= read -r f; do [ -n "$f" ] && cp -f "$f" "$fdir/" 2>/dev/null; done <<EOF
+$ttfs
+EOF
+  [ "$os" = "Darwin" ] || { command -v fc-cache >/dev/null 2>&1 && fc-cache -f "$fdir" >/dev/null 2>&1 || true; }
+  info "Installed to $fdir — select 'JetBrainsMono Nerd Font' in your terminal."
   rm -rf "$tmp"
 }
 install_font || warn "Font install skipped (error) — icons need a Nerd Font."
