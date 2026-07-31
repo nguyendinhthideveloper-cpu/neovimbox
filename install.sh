@@ -21,10 +21,78 @@ HOST_BIN="$HOME/.local/bin"
 # Where this script sits (empty/"." when piped via curl | bash).
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)" || HERE=""
 
-info() { printf '\033[32m▸ %s\033[0m\n' "$*"; }
-warn() { printf '\033[33m⚠ %s\033[0m\n' "$*" >&2; }
+# ---------------------------------------------------------------------------
+# Presentation layer — DELIBERATE DUPLICATION of the same block at the top of
+# `nvx`. This script runs standalone (`curl | bash`) *before* nvx exists on
+# disk, so it cannot source the definitions. Keep the two copies IN SYNC: same
+# guards, same glyphs, same function names, so installer and command feel like
+# one tool.
+#
+# Colour belongs to the STREAM, not the program: stdout and stderr are judged
+# separately so `... | tee log` keeps the terminal readable while the piped copy
+# stays plain. Honours NO_COLOR and TERM=dumb; FORCE_COLOR overrides detection.
+# Glyphs drop to ASCII when the locale is not UTF-8 or NVX_NERD_FONT=0 (the same
+# switch nvim/init.lua uses).
+_color_ok() { # $1 = fd number
+  [ -n "${NO_COLOR:-}" ] && return 1
+  [ -n "${FORCE_COLOR:-}" ] && return 0
+  [ "${TERM:-}" = "dumb" ] && return 1
+  [ -t "$1" ]
+}
+
+# Palette per stream: stdout (info/ok/step/dim) and stderr (warn/err) are
+# resolved independently — one can be a terminal while the other is a file.
+if _color_ok 1; then
+  C_STEP=$'\e[1;36m'; C_INFO=$'\e[32m'; C_OK=$'\e[32m'; C_DIM=$'\e[2m'; C_RST=$'\e[0m'
+else
+  C_STEP=''; C_INFO=''; C_OK=''; C_DIM=''; C_RST=''
+fi
+if _color_ok 2; then
+  C_WARN=$'\e[33m'; C_ERR=$'\e[31m'; C_RST2=$'\e[0m'
+else
+  C_WARN=''; C_ERR=''; C_RST2=''
+fi
+
+# UTF-8 glyphs need a UTF-8 locale AND a user who wants them. An UNSET locale is
+# treated as capable: CI runners usually have none and should keep pretty output.
+_utf8_ok() {
+  [ "${NVX_NERD_FONT:-1}" = "0" ] && return 1
+  local loc="${LC_ALL:-${LC_CTYPE:-${LANG:-}}}"
+  [ -z "$loc" ] && return 0
+  case "$loc" in *[Uu][Tt][Ff]*) return 0 ;; *) return 1 ;; esac
+}
+# ASCII fallbacks are all single-width so columns still line up.
+if _utf8_ok; then
+  G_STEP='▸'; G_OK='✓'; G_WARN='⚠'; G_ERR='✗'
+else
+  G_STEP='>'; G_OK='+'; G_WARN='!'; G_ERR='x'
+fi
+
+# Step counter: set STEP_TOTAL>0 to get "[n/total]" headings (nvx leaves it 0 and
+# gets plain headings). Text only, no spinner — a counter reads correctly in a
+# terminal and in a CI log, and subprocess output stays visible underneath.
+STEP_TOTAL="${STEP_TOTAL:-0}"; STEP_N=0
+step() {
+  STEP_N=$((STEP_N + 1))
+  if [ "$STEP_TOTAL" -gt 0 ]; then
+    printf '\n%s%s [%d/%d] %s%s\n' "$C_STEP" "$G_STEP" "$STEP_N" "$STEP_TOTAL" "$*" "$C_RST"
+  else
+    printf '\n%s%s %s%s\n' "$C_STEP" "$G_STEP" "$*" "$C_RST"
+  fi
+}
+info() { printf '%s%s %s%s\n' "$C_INFO" "$G_STEP" "$*" "$C_RST"; }
+ok()   { printf '%s%s %s%s\n' "$C_OK" "$G_OK" "$*" "$C_RST"; }
+dim()  { printf '%s%s%s\n' "$C_DIM" "$*" "$C_RST"; }
+warn() { printf '%s%s %s%s\n' "$C_WARN" "$G_WARN" "$*" "$C_RST2" >&2; }
+# err/die: kept for parity with nvx. err only reports; die is the one that exits.
+err()  { printf '%s%s %s%s\n' "$C_ERR" "$G_ERR" "$*" "$C_RST2" >&2; }
+die()  { err "$*"; exit 1; }
+# ---------------------------------------------------------------------------
+
+STEP_TOTAL=8
 
 # 0) Prerequisites (can't auto-install — need root / differ per OS) -----------
+step "Checking prerequisites"
 miss=0
 need() { command -v "$1" >/dev/null 2>&1 || { warn "missing '$1' — $2"; miss=1; }; }
 need curl  "apt install curl · dnf install curl · brew install curl"
@@ -39,16 +107,19 @@ fi
 [ "$miss" -eq 0 ] || warn "Missing prerequisites above — continuing, but related parts may fail."
 
 # 0.5) Source: run from a clone (script sits next to nvx+nvim), else fetch it --
+step "Fetching neovimbox"
 if [ -n "$HERE" ] && [ -f "$HERE/nvx" ] && [ -d "$HERE/nvim" ]; then
   SRC="$HERE"
+  info "Using the local checkout: $SRC"
 else
   SRC="$NVX_HOME/src"
-  info "Fetching neovimbox ($REPO_URL)..."
+  info "Cloning $REPO_URL..."
   rm -rf "$SRC"; mkdir -p "$(dirname "$SRC")"
   git clone --depth 1 "$REPO_URL" "$SRC"
 fi
 
 # 1) Sandbox layout ----------------------------------------------------------
+step "Creating the sandbox ($NVX_HOME)"
 mkdir -p "$NVX_HOME"/bin "$NVX_HOME"/config "$NVX_HOME"/data \
          "$NVX_HOME"/state "$NVX_HOME"/cache "$NVX_HOME"/mise "$HOST_BIN"
 
@@ -64,17 +135,23 @@ export MISE_CACHE_DIR="$NVX_HOME/cache/mise"
 export PATH="$NVX_HOME/bin:$NVX_HOME/mise/shims:$PATH"
 
 # 3) mise (binary lives INSIDE the sandbox) ----------------------------------
+# The heading is printed unconditionally (outside the if) so the counter never
+# skips a number when mise is already there from an earlier run.
+step "Installing mise"
 if [ ! -x "$NVX_HOME/bin/mise" ]; then
-  info "Installing mise into the sandbox..."
+  info "Downloading mise into the sandbox..."
   curl -fsSL https://mise.run | MISE_INSTALL_PATH="$NVX_HOME/bin/mise" sh
+else
+  ok "mise already in the sandbox."
 fi
 
 # 4) Neovim + Node + ripgrep + fd (all in the sandbox) -----------------------
-info "Installing Neovim + Node + ripgrep + fd via mise..."
+step "Installing Neovim, Node, ripgrep, fd"
 mise use -g neovim@latest node@20 ripgrep fd
 mise reshim; hash -r 2>/dev/null || true
 
 # 5) Copy Neovim config + command into the sandbox (self-contained) ----------
+step "Copying the config and the nvx command"
 rm -rf "$NVX_HOME/config/nvim"
 cp -r "$SRC/nvim" "$NVX_HOME/config/nvim"
 cp "$SRC/nvx" "$NVX_HOME/bin/nvx"
@@ -185,16 +262,32 @@ EOF
   info "Installed to $fdir — select 'JetBrainsMono Nerd Font' in your terminal."
   rm -rf "$tmp"
 }
+step "Installing JetBrainsMono Nerd Font"
 install_font || warn "Font install skipped (error) — icons need a Nerd Font."
 
 # 7) Pre-install plugins + core LSP (treesitter parsers built via Lazy) ------
-info "Loading Neovim plugins + core LSP (one-time, takes a moment)..."
+# The longest step by far: say so up front, and let Lazy/Mason print underneath
+# rather than hiding them behind a progress display — if one fails, the reason is
+# already on screen instead of buried in a log we would have to dump.
+step "Loading Neovim plugins and core LSP"
+info "One-time, takes a few minutes on a slow network — output follows."
 nvim --headless "+Lazy! install" +qa || true
 nvim --headless "+Lazy! restore" +qa || true
 nvim --headless "+MasonInstall lua-language-server stylua" +qa || true
 
-info "Done! Sandbox: $NVX_HOME"
-info "Use: 'nvx' (open Neovim) · 'nvx add go' · 'nvx add-tool java@25 maven@3.9.6'"
-info "For icons, set your terminal font to 'JetBrainsMono Nerd Font' (installed above)."
-info "Wipe everything: 'nvx uninstall'"
-command -v nvx >/dev/null 2>&1 || warn "Add $HOST_BIN to PATH to call 'nvx' (or run $HOST_BIN/nvx)."
+# Closing block: one success heading, then quieter detail. The next command to
+# run comes first; font/wipe notes are dimmed because they are reference, not
+# instructions. The PATH check is last and loud — nvx is unusable until it passes.
+printf '\n'
+ok "Neovimbox is ready. Sandbox: $NVX_HOME"
+printf '\n'
+info "Run 'nvx' to open Neovim."
+dim "    nvx add go                          add a language (go|python|rust|jvm|node|cpp)"
+dim "    nvx add-tool java@25 maven@3.9.6    add CLI tools/versions"
+printf '\n'
+dim "    Icons: set your terminal font to 'JetBrainsMono Nerd Font' (installed above)."
+dim "    Wipe everything: 'nvx uninstall' (deletes $NVX_HOME)."
+if ! command -v nvx >/dev/null 2>&1; then
+  printf '\n'
+  warn "'nvx' is not on your PATH yet — add $HOST_BIN to PATH, or run $HOST_BIN/nvx directly."
+fi

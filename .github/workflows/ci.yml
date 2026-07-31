@@ -54,6 +54,102 @@ jobs:
           nvx exec yq --version
           nvx list
           echo "✓ nvx sandbox OK"
+      # The smoke step above only proves the commands RUN. This one pins down what
+      # they PRINT, so a rewrite of the presentation layer can't silently regress
+      # piping, terminal width, or help coverage.
+      - name: Output contract (colour, width, help coverage)
+        run: |
+          set -euo pipefail
+
+          # The ESC[ needle is matched with `grep -F` (literal) everywhere below.
+          # As a regex, "\e[" opens an unterminated bracket expression — GNU grep
+          # tolerates it, other greps error out — and the failure mode is silent:
+          # an erroring grep returns non-zero, which reads as "assertion passed".
+          esc=$'\e['
+
+          # (a) Colour is a property of the STREAM, not of the program. When stdout
+          # is a pipe there is no terminal to colour, so escape sequences leaking
+          # here would corrupt `nvx doctor | tee log`, grep, and CI logs alike.
+          for c in "nvx --help" "nvx doctor" "nvx version"; do
+            if $c 2>/dev/null | grep -qF -- "$esc"; then
+              echo "ANSI leaked when piped: $c"
+              exit 1
+            fi
+          done
+          echo "✓ no ANSI when piped"
+
+          # (b) The two standard overrides must both be honoured: NO_COLOR strips
+          # colour even on a tty, FORCE_COLOR keeps it even off one (that second
+          # half is what CI log viewers and `less -R` rely on). Written as if/then
+          # rather than `grep && exit` because under `set -e` a *passing* assertion
+          # is a non-zero grep, which would abort the step on success.
+          if NO_COLOR=1 nvx --help | grep -qF -- "$esc"; then
+            echo "NO_COLOR ignored"
+            exit 1
+          fi
+          if ! FORCE_COLOR=1 nvx --help | grep -qF -- "$esc"; then
+            echo "FORCE_COLOR ignored"
+            exit 1
+          fi
+          echo "✓ NO_COLOR / FORCE_COLOR honoured"
+
+          # (c) 80 columns is the floor for real terminals (split panes, SSH, the
+          # default macOS Terminal). Help that wraps is help nobody reads.
+          nvx --help | awk 'length > 80 { print "too wide (" length "): " $0; bad=1 } END { exit bad ? 1 : 0 }'
+          echo "✓ help fits 80 columns"
+
+          # (d) Every dispatchable command must be discoverable from `nvx --help`.
+          # Undocumented subcommands are the usual casualty when help text gets
+          # rewritten by hand.
+          #
+          # The help text is split into words on anything that is not alnum or a
+          # hyphen, then matched exactly. Two reasons not to use a regex here:
+          # keeping the hyphen inside a word means bare "update" is NOT satisfied
+          # by "self-update" (a substring/`grep -w` match would wrongly pass), and
+          # an exact `grep -Fx` behaves the same across grep implementations.
+          nvx --help | tr -cs '[:alnum:]-' '\n' > /tmp/nvx-help-words.txt
+          for cmd in shell exec add add-tool rm list update self-update home doctor version uninstall help; do
+            if ! grep -qFx -- "$cmd" /tmp/nvx-help-words.txt; then
+              echo "command missing from --help: $cmd"
+              exit 1
+            fi
+          done
+          echo "✓ all commands documented in --help"
+
+          # (e) doctor is meant to FAIL the shell when a check fails. This job has
+          # prerequisites installed and the sandbox built, so the environment is
+          # complete and doctor must exit 0 — that makes a bare call a real
+          # assertion, and guards against doctor reporting problems it invented.
+          if ! nvx doctor >/dev/null 2>&1; then
+            echo "nvx doctor failed in a complete environment"
+            nvx doctor || true
+            exit 1
+          fi
+          echo "✓ doctor exits 0 on a healthy sandbox"
+
+          # (f) Per-command help must work in both spellings and actually mention
+          # the languages it accepts. `nvx add --help` is the risky one: --help has
+          # to be intercepted BEFORE the install path, or asking for documentation
+          # would install a toolchain. Snapshot the tool list to prove it stayed inert.
+          before="$(nvx list)"
+          for h in "nvx help add" "nvx add --help"; do
+            out="$($h)"
+            for lang in go python rust jvm node cpp; do
+              if ! printf '%s\n' "$out" | grep -qF -- "$lang"; then
+                echo "'$h' does not mention language: $lang"
+                exit 1
+              fi
+            done
+          done
+          after="$(nvx list)"
+          if [ "$before" != "$after" ]; then
+            echo "'nvx add --help' changed installed tools — help must not install"
+            diff <(printf '%s\n' "$before") <(printf '%s\n' "$after") || true
+            exit 1
+          fi
+          echo "✓ per-command help works and installs nothing"
+
+          echo "✓ output contract OK"
       - name: Sandbox stays inside ~/.nvx (no scatter onto host)
         run: |
           test ! -e "$HOME/.config/nvim"        || { echo "leaked ~/.config/nvim"; exit 1; }

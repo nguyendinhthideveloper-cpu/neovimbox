@@ -1,18 +1,18 @@
 # Roadmap — neovimbox (`nvx`)
 
-Status: the native `nvx` build (`~/.nvx` sandbox) is complete & verified (Linux). Docker removed.
+Status: the native `nvx` build (`~/.nvx` sandbox) is complete & verified on Linux and macOS. Docker removed.
 
 ## P1 — Correct & solid
 - [x] `nvx doctor` — check prerequisites (cc/unzip/git) + tools in the sandbox.
 - [x] `nvx version` — print mise / nvim / node versions.
-- [ ] **Merge `poc/mise-base` → `main`** so CI (lint + smoke) runs officially.
-- [ ] **Test on macOS** (zsh + clang from xcode-select) — so far only Linux/Ubuntu verified.
+- [x] **Merge `poc/mise-base` → `main`** so CI (lint + smoke) runs officially — `main` is the default branch and CI runs on every push/PR.
+- [x] **Test on macOS** (zsh + clang from xcode-select) — the `smoke-macos` job in `.github/workflows/ci.yml` runs the full install + `nvx` flow on `macos-latest`.
 
 ## P2 — Standardize / finalize
 - [x] CI + License badges in the README.
 - [x] `.github/ISSUE_TEMPLATE/` (bug + feature) + PR template.
-- [ ] Publish to GitHub as neovimbox (create repo + push); update badge URLs if the owner differs. *(needs you)*
-- [ ] release-please to publish **0.2.0** (breaking: Docker removed) once on main. *(runs automatically on merge)*
+- [x] Publish to GitHub as neovimbox (create repo + push); badge URLs point at `nguyendinhthideveloper-cpu/neovimbox`.
+- [x] release-please shipped **1.0.0** (tag `v1.0.0`, see `CHANGELOG.md` / `.release-please-manifest.json`). *(runs automatically on merge)*
 
 ## P3 — Features (as needed)
 - [x] `nvx update` upgrades Neovim too — `mise upgrade` already covers it (neovim installed as `@latest`).
