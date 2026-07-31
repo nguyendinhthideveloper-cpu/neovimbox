@@ -29,8 +29,9 @@ return {
     },
   },
   init = function()
-    -- ufo needs these options to work.
-    vim.o.foldcolumn = "1"
+    -- ufo needs these options to work. `foldcolumn` is the other one it needs,
+    -- but it is gutter layout rather than fold behaviour so it lives with the
+    -- rest of the gutter in config/options.lua.
     vim.o.foldlevel = 99
     vim.o.foldlevelstart = 99
     vim.o.foldenable = true
