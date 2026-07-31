@@ -7,13 +7,24 @@
 # pointing XDG_*/MISE_* at the sandbox — it never touches ~/.config, ~/.local/
 # share or your .bashrc. Wipe it all with `nvx uninstall` (delete one dir).
 #
-# The command list lives in usage() below — `nvx --help` prints it directly, so
-# there is no line-number coupling to keep in sync.
+#   nvx [path|-flag|+cmd]    open Neovim: cwd, a dir/file, or pass nvim flags through
+#   nvx shell                open a shell with the sandbox env (nvim, go... sandboxed)
+#   nvx exec <cmd...>        run a command in the sandbox env (e.g. nvx exec java -version)
+#   nvx add <lang> [ver]     add a language: go|python|rust|jvm|node|cpp (runtime + LSP/format/lint/DAP)
+#   nvx add-tool <t@ver...>  add a CLI tool/version (e.g. java@25 maven@3.9.6 docker-cli)
+#   nvx rm <tool>            remove a runtime/tool
+#   nvx list                 list installed tools
+#   nvx update               upgrade tools + sync Neovim plugins
+#   nvx self-update          re-fetch nvx + Neovim config from GitHub into the sandbox
+#   nvx uninstall            WIPE the whole sandbox + the nvx command
+#   nvx home                 print the sandbox path
+#   nvx doctor               check prerequisites (cc/unzip/git) + sandbox tools
+#   nvx version              print mise / nvim / node versions
 # ============================================================================
 set -euo pipefail
 
 NVX_HOME="${NVX_HOME:-$HOME/.nvx}"
-NVX_VERSION="1.0.0" # x-release-please-version
+NVX_VERSION="1.1.0" # x-release-please-version
 NVX_REPO="${NVX_REPO:-https://github.com/nguyendinhthideveloper-cpu/neovimbox}"
 
 # --- Point all state at the sandbox (this is what makes "delete one dir" clean) ---
@@ -27,310 +38,13 @@ export MISE_STATE_DIR="$NVX_HOME/state/mise"
 export MISE_CACHE_DIR="$NVX_HOME/cache/mise"
 export PATH="$NVX_HOME/bin:$NVX_HOME/mise/shims:$PATH"
 
-NVX_LOG_DIR="$NVX_HOME/state/nvx"
-NVX_LOG="$NVX_LOG_DIR/nvx.log"
+RED=$'\e[31m'; GRN=$'\e[32m'; RST=$'\e[0m'
+err()  { echo "${RED}✗ $*${RST}" >&2; }
+info() { echo "${GRN}▸ $*${RST}"; }
 
-# ============================================================================
-# Presentation layer — the ONE place that decides colour and glyphs.
-# ============================================================================
-# A leading `--no-color` is a global flag; only accepted in leading position so
-# it is never stolen from `nvx exec <cmd> --no-color`.
-NVX_NO_COLOR=0
-while [ "${1:-}" = "--no-color" ]; do NVX_NO_COLOR=1; shift; done
-
-# Colour is off when the stream is not a terminal, NO_COLOR is set, TERM=dumb,
-# or --no-color was passed; FORCE_COLOR overrides the automatic checks
-# (clig.dev). stdout and stderr are judged SEPARATELY, so `nvx doctor | tee f`
-# writes plain text to the pipe while errors stay readable on the terminal.
-_use_color() { # $1 = fd
-  [ "$NVX_NO_COLOR" = "1" ] && return 1
-  [ -n "${FORCE_COLOR:-}" ] && return 0
-  [ -n "${NO_COLOR:-}" ] && return 1
-  [ "${TERM:-}" = "dumb" ] && return 1
-  [ -t "$1" ]
-}
-
-if _use_color 1; then
-  C_G=$'\e[32m'; C_Y=$'\e[33m'; C_R=$'\e[31m'; C_B=$'\e[1m'; C_D=$'\e[2m'; C_0=$'\e[0m'
-else
-  C_G=''; C_Y=''; C_R=''; C_B=''; C_D=''; C_0=''
-fi
-if _use_color 2; then
-  E_Y=$'\e[33m'; E_R=$'\e[31m'; E_D=$'\e[2m'; E_0=$'\e[0m'
-else
-  E_Y=''; E_R=''; E_D=''; E_0=''
-fi
-
-# Glyphs are all one cell wide in both sets, so grids line up either way.
-# NVX_NERD_FONT=0 selects ASCII — the same switch the Neovim config uses.
-if [ "${NVX_NERD_FONT:-1}" = "0" ]; then
-  G_ARROW='>'; G_OK='+'; G_BAD='x'; G_WARN='!'
-else
-  G_ARROW='▸'; G_OK='✓'; G_BAD='✗'; G_WARN='⚠'
-fi
-
-info() { printf '%s%s%s %s\n' "$C_G" "$G_ARROW" "$C_0" "$*"; }
-ok()   { printf '%s%s%s %s\n' "$C_G" "$G_OK" "$C_0" "$*"; }
-dim()  { printf '%s%s%s\n' "$C_D" "$*" "$C_0"; }
-warn() { printf '%s%s%s %s\n' "$E_Y" "$G_WARN" "$E_0" "$*" >&2; }
-err()  { printf '%s%s%s %s\n' "$E_R" "$G_BAD" "$E_0" "$*" >&2; }
-# Follow-up detail for a warn/err: same stream as the message it explains, so
-# `2>/dev/null` drops the pair together instead of orphaning the hint.
-hint() { printf '%s%s%s\n' "$E_D" "$*" "$E_0" >&2; }
-die()  { err "$*"; exit 1; }
-# Progress framing for multi-part work: plain text, so it is correct whether or
-# not stdout is a terminal (no animation to garble CI logs).
-step() { printf '%s[%s/%s]%s %s\n' "$C_D" "$1" "$2" "$C_0" "${*:3}"; }
-
-log_init() { mkdir -p "$NVX_LOG_DIR" 2>/dev/null || true; }
-
-# Every tool prints its version differently ("mise 2026.1.1 macos-arm64",
-# "NVIM v0.11.3", "v20.11.0") — reduce them all to a bare x.y.z so columns line
-# up and a missing tool never dumps "command not found" into a version field.
-ver_of() {
-  local raw v
-  command -v "$1" >/dev/null 2>&1 || { echo "not installed"; return 1; }
-  raw="$("$1" --version 2>/dev/null | head -1 || true)"
-  v="$(printf '%s\n' "$raw" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1 || true)"
-  if [ -n "$v" ]; then echo "$v"; else echo "unknown"; fi
-}
-
-# ============================================================================
-# Help
-# ============================================================================
-usage() {
-  cat <<EOF
-nvx $NVX_VERSION — a Neovim IDE that lives in one directory
-
-${C_B}Usage${C_0}
-  nvx [<path>|<nvim-flag>|+<ex-cmd>]
-  nvx <command> [<args>...]
-
-${C_B}Examples${C_0}
-  nvx add go            add Go: runtime + LSP, formatter, linter, debugger
-  nvx .                 open the current directory in Neovim
-  nvx exec go version   run one command with the sandbox on PATH
-  nvx doctor            check that everything is in place
-
-${C_B}Open${C_0}
-  nvx [path|-flag|+cmd] open Neovim: cwd, a dir/file, or pass nvim flags on
-  shell                 open a shell with the sandbox on PATH
-  exec <cmd...>         run one command with the sandbox on PATH
-
-${C_B}Install${C_0}
-  add <lang> [ver]      add a language: go python rust jvm node cpp
-  add-tool <tool[@ver]> add a CLI tool via mise (kubectl, gh, lazygit)
-  rm <tool>             remove a runtime or tool
-  list                  list installed runtimes and tools
-
-${C_B}Maintain${C_0}
-  update                upgrade tools, then sync Neovim plugins
-  self-update           re-fetch nvx + Neovim config from GitHub
-  doctor                check prerequisites and sandbox tools
-  version               print nvx / mise / nvim / node versions
-  home                  print the sandbox path
-
-${C_B}Danger${C_0}
-  uninstall             delete the sandbox and the nvx command
-
-Run 'nvx help <command>' for detail. Global flag: --no-color.
-Docs: $NVX_REPO
-EOF
-}
-
-help_add() {
-  cat <<'EOF'
-nvx add <lang> [version] — install a language end to end
-
-Installs the runtime with mise, then the IDE tooling with Mason: language
-server, formatter, linter and debug adapter. The Neovim config enables each
-of them only when the matching toolchain is on PATH, so one config covers
-every combination.
-
-Name          Runtime          Tooling
-  go            go@latest        gopls gofumpt goimports golangci-lint delve
-  python (py)   python@latest    pyright black isort ruff debugpy
-  rust (rs)     rust@stable      rustfmt clippy rust-analyzer codelldb
-  jvm (java)    java@temurin-21  jdtls java-debug-adapter java-test
-                maven, gradle    google-java-format
-  node          node@latest      -
-  cpp (c, c++)  host compiler    clangd clang-format codelldb
-
-C and C++ install no runtime: the compiler comes from the host, so `nvx add cpp`
-only adds the IDE tooling.
-
-Examples
-  nvx add go
-  nvx add python 3.12
-  nvx add jvm temurin-25
-
-Pin Maven/Gradle with MAVEN_VERSION / GRADLE_VERSION. If a Mason tool fails,
-nvx says which one and exits non-zero; the log path is printed with it.
-EOF
-}
-
-help_add_tool() {
-  cat <<'EOF'
-nvx add-tool <tool[@version]>... — install CLI tools with mise
-
-Anything in the mise registry works, and several can be given at once. Tools
-land in the sandbox, so they are on PATH inside `nvx shell` / `nvx exec` and
-disappear with `nvx uninstall`.
-
-Examples
-  nvx add-tool kubectl
-  nvx add-tool java@25 maven@3.9.6
-  nvx add-tool gh lazygit docker-cli
-
-Database clients (psql, mysql, redis-cli) are OS packages — install those on
-the host. Use `nvx list` to see what is installed and `nvx rm <tool>` to drop
-one.
-EOF
-}
-
-help_cmd() {
-  case "${1:-}" in
-    add) help_add ;;
-    add-tool) help_add_tool ;;
-    shell) cat <<'EOF'
-nvx shell — start your shell with the sandbox on PATH
-
-Everything installed through nvx (Neovim, language runtimes, CLI tools) is
-callable directly: `go build`, `nvim`, `kubectl`. Nothing outside $NVX_HOME
-is modified. Type `exit` to leave.
-EOF
-      ;;
-    exec) cat <<'EOF'
-nvx exec <cmd> [args...] — run ONE command with the sandbox on PATH
-
-The non-interactive counterpart to `nvx shell`, handy in scripts and CI.
-
-Examples
-  nvx exec go version
-  nvx exec nvim --version
-  nvx exec rustup component add rust-analyzer
-EOF
-      ;;
-    rm|remove) cat <<'EOF'
-nvx rm <tool[@version]> — remove a runtime or tool
-
-Uninstalls through mise and re-creates the shims. Mason-installed language
-servers are not touched; manage those with :Mason inside Neovim.
-EOF
-      ;;
-    list|ls) cat <<'EOF'
-nvx list — show the runtimes and tools installed in the sandbox
-
-Reports what mise manages. Language servers, formatters and linters come from
-Mason instead — see :Mason inside Neovim.
-EOF
-      ;;
-    update) cat <<'EOF'
-nvx update — upgrade tools, then sync Neovim plugins
-
-Runs `mise upgrade` (Neovim included, it is installed as @latest) and then
-`:Lazy! sync`. Each half reports separately and the exit code is non-zero if
-either failed, so it is safe to chain in a script.
-EOF
-      ;;
-    self-update|selfupdate) cat <<'EOF'
-nvx self-update — re-fetch nvx and the Neovim config from GitHub
-
-Clones the repo shallowly, replaces $NVX_HOME/config/nvim and the nvx command
-itself, then restores plugins to the versions pinned in the repo lockfile. The
-command is swapped atomically, so updating while it runs is safe. Runtimes and
-Mason tools are left alone; use `nvx update` for those.
-
-Set NVX_REPO to pull from a fork.
-EOF
-      ;;
-    doctor) cat <<'EOF'
-nvx doctor — check prerequisites and sandbox tools
-
-Host: git, curl, unzip and a C compiler, which nvx cannot install for you.
-Sandbox: mise, Neovim and Node, which install.sh provides.
-
-Exits non-zero when anything is missing, so it works as a CI gate. Every
-failure line carries the command that fixes it.
-EOF
-      ;;
-    version|--version|-v) cat <<'EOF'
-nvx version — print nvx, mise, Neovim and Node versions
-
-Versions are normalised to x.y.z. For Neovim's full banner use
-`nvx exec nvim --version`.
-EOF
-      ;;
-    home) cat <<'EOF'
-nvx home — print the sandbox path
-
-Useful in scripts: `ls "$(nvx home)"`. Override the location by exporting
-NVX_HOME before install.
-EOF
-      ;;
-    uninstall) cat <<'EOF'
-nvx uninstall — delete the sandbox and the nvx command
-
-Removes $NVX_HOME and ~/.local/bin/nvx after asking for confirmation. That is
-everything nvx created, except the Nerd Font install.sh copied into your font
-directory.
-
-The sandbox is renamed aside and deleted in the background, so the command
-returns immediately even on WSL where unlinking many small files is slow.
-EOF
-      ;;
-    nvim|edit) cat <<'EOF'
-nvx / nvx nvim — open Neovim inside the sandbox
-
-  nvx              open in the current directory
-  nvx .            open the current directory in the file tree
-  nvx file.go      open a file
-  nvx -R file.go   nvim flags pass straight through
-  nvx +qa          so do Ex commands
-
-Only --version/-v and --help/-h are intercepted; those report nvx itself.
-EOF
-      ;;
-    '') usage ;;
-    *) err "no help for '$1'"; hint "Run 'nvx --help' for the command list."; return 1 ;;
-  esac
-}
-
-# Prefix match is enough to catch the usual typos (ad, doc, unin) and costs
-# nothing — no need for edit distance here.
-suggest() {
-  local c="$1" k
-  for k in nvim shell exec add add-tool rm list update self-update home version doctor uninstall help; do
-    case "$k" in "$c"*) echo "$k"; return 0 ;; esac
-  done
-  return 1
-}
-
-# ============================================================================
-# Install helpers
-# ============================================================================
-FAILED_TOOLS=""
-
-# Mason's exit code does not reflect a failed download in headless mode, so
-# verify the package directory afterwards instead of trusting it. Output goes
-# to the log; on failure the summary points there (never hide the logs).
-MASON_PKGS="$XDG_DATA_HOME/nvim/mason/packages"
-mason() {
-  local tool total="$#" i=0
-  log_init
-  for tool in "$@"; do
-    i=$((i + 1))
-    step "$i" "$total" "installing $tool"
-    printf '\n=== MasonInstall %s (%s) ===\n' "$tool" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >>"$NVX_LOG" 2>/dev/null || true
-    nvim --headless "+MasonInstall $tool" +qa >>"$NVX_LOG" 2>&1 || true
-    [ -d "$MASON_PKGS/$tool" ] || FAILED_TOOLS="$FAILED_TOOLS $tool"
-  done
-}
-
-mise_use() {
-  mise use -g "$@" || { err "mise could not install: $*"; return 1; }
-  mise reshim || true
-}
+# Install LSP/formatter/linter/DAP via mason (headless). '|| true' so one bad
+# tool doesn't sink the whole step; the specific error still shows in the log.
+mason() { nvim --headless "+MasonInstall $*" +qa || true; }
 
 # Install a WHOLE language: runtime (mise) + IDE tooling (mason). The tool list
 # tracks the Neovim config (lsp.lua/mason-tools/conform/lint/dap/neotest).
@@ -338,24 +52,20 @@ lang_add() {
   local lang="$1" ver="${2:-}"
   case "$lang" in
     go)
-      mise_use "go@${ver:-latest}" || return 1
+      mise use -g "go@${ver:-latest}"; mise reshim
       mason gopls gofumpt goimports golangci-lint delve ;;
     python|py)
-      mise_use "python@${ver:-latest}" || return 1   # python precompiled
+      mise use -g "python@${ver:-latest}"; mise reshim   # python precompiled
       mason pyright black isort ruff debugpy ;;
     rust|rs)
-      mise_use "rust@${ver:-stable}" || return 1
+      mise use -g "rust@${ver:-stable}"; mise reshim
       command -v cc >/dev/null 2>&1 || \
-        warn "no 'cc' — cargo build/link will fail. Install a compiler from the host (apt install build-essential / xcode-select --install)."
-      if rustup component add rustfmt clippy rust-src rust-analyzer; then
-        mise reshim || true
-      else
-        FAILED_TOOLS="$FAILED_TOOLS rustup-components"
-      fi
+        err "no 'cc' — cargo build/link will fail. Install a compiler from the host (apt install build-essential / xcode-select --install)."
+      rustup component add rustfmt clippy rust-src rust-analyzer; mise reshim
       mason codelldb ;;
     jvm|java)
-      mise_use "java@${ver:-temurin-21}" || return 1
-      mise_use "maven@${MAVEN_VERSION:-3.9.9}" "gradle@${GRADLE_VERSION:-8.10.2}" || return 1
+      mise use -g "java@${ver:-temurin-21}"
+      mise use -g "maven@${MAVEN_VERSION:-3.9.9}" "gradle@${GRADLE_VERSION:-8.10.2}"; mise reshim
       local jdk_home jdk_major
       jdk_home="$(mise where java)"
       jdk_major="$(java -version 2>&1 | grep -oE '[0-9]+' | head -1)"
@@ -372,160 +82,69 @@ lang_add() {
 EOF
       mason jdtls java-debug-adapter java-test google-java-format ;;
     node)
-      mise_use "node@${ver:-latest}" || return 1 ;;
+      mise use -g "node@${ver:-latest}"; mise reshim ;;
     cpp|c|c++)
       # LSP/format/DAP via mason; the COMPILER (clang/gcc) comes from the host.
       command -v cc >/dev/null 2>&1 || command -v clang >/dev/null 2>&1 || \
-        warn "no C/C++ compiler — install from the host (apt install build-essential clang / xcode-select --install)."
+        err "no C/C++ compiler — install from the host (apt install build-essential clang / xcode-select --install)."
       mason clangd clang-format codelldb ;;
-    *)
-      err "nvx add: unsupported language '$lang'"
-      hint "Supported: go python rust jvm node cpp  ·  detail: nvx help add"
-      return 1 ;;
+    *) err "nvx add: unsupported '$lang' (go|python|rust|jvm|node|cpp)"; return 1 ;;
   esac
-
-  # One summary at the end, grouped — the most important line last, where the
-  # eye lands. Never claim success when a tool did not land.
-  if [ -n "$FAILED_TOOLS" ]; then
-    local -a failed=()
-    read -r -a failed <<<"$FAILED_TOOLS"
-    warn "$lang${ver:+@$ver}: runtime installed, but ${#failed[@]} tool(s) failed:$FAILED_TOOLS"
-    hint "  log:   $NVX_LOG"
-    hint "  retry: nvx exec nvim --headless '+MasonInstall <tool>' +qa"
-    return 1
-  fi
-  ok "installed $lang${ver:+@$ver}"
+  info "installed $lang${ver:+@$ver}"
 }
 
-# ============================================================================
-# Dispatch
-# ============================================================================
+[ -d "$NVX_HOME" ] || { err "Sandbox not installed ($NVX_HOME). Run ./install.sh first."; exit 1; }
+
 cmd="${1:-nvim}"; shift || true
-
-# `nvx <command> --help` works for every command, alongside `nvx help <command>`.
-case "${1:-}" in
-  -h|--help)
-    case "$cmd" in
-      nvim|shell|exec|add|add-tool|rm|remove|list|ls|update|self-update|selfupdate|home|version|doctor|uninstall)
-        help_cmd "$cmd"; exit 0 ;;
-    esac ;;
-esac
-
-# Documentation and diagnostics run WITHOUT a sandbox: on a fresh machine these
-# are exactly the commands you reach for, and `doctor` telling you what is
-# missing is more useful than refusing to start. Everything else needs the
-# sandbox, so it is gated below.
-case "$cmd" in
-  help)      help_cmd "${1:-}"; exit $? ;;
-  -h|--help) usage; exit 0 ;;
-  home)      echo "$NVX_HOME"; exit 0 ;;
-esac
-
-case "$cmd" in
-  version|--version|-v|doctor) ;;  # handled below; they report a missing sandbox
-  *) [ -d "$NVX_HOME" ] || die "Sandbox not installed ($NVX_HOME). Run ./install.sh first." ;;
-esac
-
 case "$cmd" in
   nvim|edit)   exec nvim "$@" ;;
   shell)       info "Sandbox shell ($NVX_HOME) — type 'exit' to leave."; exec "${SHELL:-bash}" ;;
-  exec)        [ "$#" -ge 1 ] || die "usage: nvx exec <cmd...>"; exec "$@" ;;
-  add)         [ "$#" -ge 1 ] || { err "usage: nvx add <go|python|rust|jvm|node|cpp> [version]"; hint "Detail: nvx help add"; exit 1; }; lang_add "$@" ;;
-  add-tool)    [ "$#" -ge 1 ] || { err "usage: nvx add-tool <tool[@version]>..."; hint "Detail: nvx help add-tool"; exit 1; }
-               info "Adding: $*"
-               mise use -g "$@" || die "mise could not install: $*"
-               mise reshim || true
-               ok "added $*" ;;
-  rm|remove)   [ "$#" -ge 1 ] || die "usage: nvx rm <tool[@version]>"
-               mise uninstall "$@" || die "mise could not remove: $*"
-               mise reshim || true
-               ok "removed $*" ;;
+  exec)        [ "$#" -ge 1 ] || { err "nvx exec <cmd...>"; exit 1; }; exec "$@" ;;
+  add)         [ "$#" -ge 1 ] || { err "nvx add <go|python|rust|jvm|node|cpp> [ver]"; exit 1; }; lang_add "$@" ;;
+  add-tool)    [ "$#" -ge 1 ] || { err "nvx add-tool <tool[@ver]...>"; exit 1; }; info "Adding: $*"; mise use -g "$@" && mise reshim ;;
+  rm|remove)   [ "$#" -ge 1 ] || { err "nvx rm <tool[@ver]>"; exit 1; }; mise uninstall "$@" && mise reshim ;;
   list|ls)     mise ls ;;
-  update)
-    log_init
-    upd_failed=0
-    info "Upgrading tools (mise)..."
-    mise upgrade || { warn "mise upgrade failed"; upd_failed=1; }
-    info "Syncing Neovim plugins..."
-    if ! nvim --headless "+Lazy! sync" +qa >>"$NVX_LOG" 2>&1; then
-      warn "plugin sync failed — see $NVX_LOG"; upd_failed=1
-    fi
-    if [ "$upd_failed" -eq 0 ]; then
-      ok "up to date"
-    else
-      err "update finished with errors (see above)"; exit 1
-    fi ;;
+  update)      info "Upgrading tools..."; mise upgrade || true; info "Syncing plugins..."; nvim --headless "+Lazy! sync" +qa || true; info "Done." ;;
   self-update|selfupdate)
-    command -v git >/dev/null 2>&1 || die "self-update needs git on the host"
-    log_init
+    command -v git >/dev/null 2>&1 || { err "self-update needs git on the host"; exit 1; }
     src="$NVX_HOME/src"
-    step 1 4 "fetching latest neovimbox ($NVX_REPO)"
+    info "Fetching latest neovimbox ($NVX_REPO)..."
     rm -rf "$src"
-    git clone --depth 1 "$NVX_REPO" "$src" >>"$NVX_LOG" 2>&1 || die "clone failed — see $NVX_LOG"
-    step 2 4 "updating the Neovim config"
+    git clone --depth 1 "$NVX_REPO" "$src" || { err "clone failed"; exit 1; }
+    info "Updating Neovim config..."
     rm -rf "$NVX_HOME/config/nvim"; cp -r "$src/nvim" "$NVX_HOME/config/nvim"
-    step 3 4 "updating the nvx command"
+    info "Updating the nvx command..."
     cp "$src/nvx" "$NVX_HOME/bin/.nvx.new"; chmod +x "$NVX_HOME/bin/.nvx.new"
     mv "$NVX_HOME/bin/.nvx.new" "$NVX_HOME/bin/nvx"  # atomic: safe to replace the running script
     rm -rf "$src"
-    step 4 4 "syncing plugins to the repo lockfile"
-    su_failed=0
-    nvim --headless "+Lazy! install" +qa >>"$NVX_LOG" 2>&1 || su_failed=1
-    nvim --headless "+Lazy! restore" +qa >>"$NVX_LOG" 2>&1 || su_failed=1
-    if [ "$su_failed" -eq 0 ]; then
-      ok "updated — re-run nvx to use the new command"
-    else
-      warn "nvx and the config were updated, but plugin sync failed — see $NVX_LOG"
-      exit 1
-    fi ;;
+    info "Syncing Neovim plugins (pinned to the repo lockfile)..."
+    nvim --headless "+Lazy! install" +qa || true
+    nvim --headless "+Lazy! restore" +qa || true
+    info "Updated. Re-run nvx to use the new command." ;;
+  home)        echo "$NVX_HOME" ;;
   version|--version|-v)
-    printf '%snvx (neovimbox) %s%s\n' "$C_B" "$NVX_VERSION" "$C_0"
-    printf '  %-8s %s\n' "sandbox" "$NVX_HOME"
-    for b in mise nvim node; do
-      printf '  %-8s %s\n' "$b" "$(ver_of "$b" || true)"
-    done ;;
+    echo "nvx (neovimbox) $NVX_VERSION · sandbox: $NVX_HOME"
+    echo "  mise: $(mise --version 2>&1 | head -1)"
+    echo "  nvim: $(nvim --version 2>&1 | head -1)"
+    echo "  node: $(node --version 2>&1 | head -1)"
+    ;;
   doctor)
-    doc_ok=0; doc_bad=0
-    row_ok()  { printf '  %s%s%s %-8s %s\n' "$C_G" "$G_OK" "$C_0" "$1" "$2"; doc_ok=$((doc_ok + 1)); }
-    row_bad() { printf '  %s%s%s %-8s %s%s%s\n' "$C_R" "$G_BAD" "$C_0" "$1" "$C_D" "$2" "$C_0"; doc_bad=$((doc_bad + 1)); }
-
-    printf '%sSandbox%s %s\n\n' "$C_B" "$C_0" "$NVX_HOME"
-
-    # Host tools: nvx cannot install these — every failure carries its fix.
-    printf '%sHost%s %s(you install these)%s\n' "$C_B" "$C_0" "$C_D" "$C_0"
+    ok() { echo "  ${GRN}✓${RST} $*"; }; bad() { echo "  ${RED}✗${RST} $*"; }
+    echo "Sandbox: $NVX_HOME"
     for b in git curl unzip; do
-      if command -v "$b" >/dev/null 2>&1; then
-        row_ok "$b" "$(ver_of "$b" || true)"
-      else
-        row_bad "$b" "missing — apt install $b · brew install $b"
-      fi
+      if command -v "$b" >/dev/null 2>&1; then ok "$b"; else bad "$b (missing — install from host)"; fi
     done
-    if cc_path="$(command -v cc gcc clang 2>/dev/null | head -1)" && [ -n "$cc_path" ]; then
-      row_ok "cc" "$cc_path"
+    if command -v cc >/dev/null 2>&1 || command -v gcc >/dev/null 2>&1 || command -v clang >/dev/null 2>&1; then
+      ok "C compiler ($(command -v cc gcc clang 2>/dev/null | head -1))"
     else
-      row_bad "cc" "missing — apt install build-essential · xcode-select --install"
+      bad "C compiler (missing — apt install build-essential / xcode-select --install)"
     fi
-
-    # Sandbox tools: install.sh provides these, so the fix is different.
-    printf '\n%sSandbox%s %s(install.sh provides these)%s\n' "$C_B" "$C_0" "$C_D" "$C_0"
     for b in mise nvim node; do
-      if command -v "$b" >/dev/null 2>&1; then
-        row_ok "$b" "$(ver_of "$b" || true)"
-      else
-        row_bad "$b" "not in the sandbox — re-run ./install.sh"
-      fi
+      if command -v "$b" >/dev/null 2>&1; then ok "$b ($("$b" --version 2>&1 | head -1))"; else bad "$b (not in sandbox)"; fi
     done
-
-    printf '\n'
-    if [ "$doc_bad" -eq 0 ]; then
-      ok "$doc_ok ok · nothing missing"
-    else
-      err "$doc_ok ok · $doc_bad missing (see the fixes above)"
-      exit 1
-    fi ;;
+    ;;
   uninstall)
-    printf '%s%s%s WIPE %s + the nvx command? [y/N] ' "$C_Y" "$G_WARN" "$C_0" "$NVX_HOME"
-    read -r a 2>/dev/null || a=""
+    read -r -p "WIPE $NVX_HOME + the nvx command? [y/N] " a 2>/dev/null || a=""
     case "$a" in
       y|Y|yes)
         # Deleting the sandbox means unlinking tens of thousands of small files,
@@ -537,21 +156,20 @@ case "$cmd" in
         trash="$NVX_HOME.trash.$$"
         if mv "$NVX_HOME" "$trash" 2>/dev/null; then
           nohup rm -rf "$trash" >/dev/null 2>&1 &
-          ok "Uninstalled. Leftover files are being deleted in the background."
+          echo "${GRN}✓ Uninstalled. Leftover files are being deleted in the background.${RST}"
         else
           # rename failed (e.g. cross-device sandbox) — fall back to a direct wipe
           info "Removing $NVX_HOME (this can take a minute)..."
           rm -rf "$NVX_HOME"
-          ok "Wiped. No trace left on the machine."
+          echo "${GRN}✓ Wiped. No trace left on the machine.${RST}"
         fi ;;
       *) echo "Cancelled." ;;
-    esac ;;
+    esac
+    ;;
+  help|-h|--help) sed -n '10,22p' "$0" | sed 's/^# \{0,1\}//' ;;
   -*|+*)  # nvim flags/Ex commands pass straight through (e.g. `nvx +qa`, `nvx -R file`)
     exec nvim "$cmd" "$@" ;;
   *)  # a path (file or dir, e.g. `nvx .` or `nvx ~/proj`) opens in Neovim
     [ -e "$cmd" ] && exec nvim "$cmd" "$@"
-    err "unknown command: $cmd"
-    if guess="$(suggest "$cmd")"; then hint "Did you mean 'nvx $guess'?"; fi
-    hint "Run 'nvx --help' for the command list."
-    exit 1 ;;
+    err "Unknown command: $cmd"; sed -n '10,22p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

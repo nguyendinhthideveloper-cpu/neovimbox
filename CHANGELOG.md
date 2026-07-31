@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/nguyendinhthideveloper-cpu/neovimbox/compare/v1.0.0...v1.1.0) (2026-07-31)
+
+
+### Features
+
+* **gutter:** reorder to sign -&gt; number -&gt; fold via statuscolumn ([b545b7a](https://github.com/nguyendinhthideveloper-cpu/neovimbox/commit/b545b7ae4dfe6f26104252f8de2ad760124b9993))
+
 ## 1.0.0 (2026-07-21)
 
 
